@@ -32,7 +32,8 @@ import os
 import shutil
 import zipfile
 from arcpy import env
-
+import smtplib
+from email.mime.text import MIMEText
 
 
 ################################################
@@ -142,7 +143,16 @@ shpTime=time.strftime ('%I:%M_%S %p')
 shpMessage=(" : Writing output shapefile '"+layerName+"' to '"+outDir+"'")
 arcpy.FeatureClassToShapefile_conversion(Input_Features=layerName, Output_Folder = outDir)
 
+# create a zip directory of output shapefile and friends
+
+zipTime=time.strftime ('%I:%M_%S %p')
+zipMessage=(" : Creating Zip directory of '"+outDir+"'")
+zf=zipfile.ZipFile(outDir+".zip",mode='w')
+zf.close()
+
 # Write out results to logfile
+stopTime=time.strftime ('%I:%M_%S %p')
+
 file = open (outDir+"/Parcel"+date+"log.txt", "w")
 file.write (printDate+' '+startTime+' : Starting Application Parcel Update \n')
 file.write (envTime + envMessage)
@@ -150,23 +160,11 @@ file.write (layTime + layMessage)
 file.write (joinTime + joinMessage)
 file.write (shpTime + shpMessage)
 file.write (zipTime + zipMessage)
-file.write (delTime + delMessage)
 file.write (stopTime+ ' : '+layerName+' successfully joined with '+jtableName+' and exported to '+outDir+'.zip')
 file.close()
 
 
-# create a zip directory of output shapefile and friends
-
-zipTime=time.strftime ('%I:%M_%S %p')
-zipMessage=(" : Creating Zip directory of '"+outDir+"'")
-zf=zipfile.ZipFile(outDir+".zip",mode='w')
-zipf.close()
-
-
-
 # send email if output parcel update exists
-import smtplib
-from email.mime.text import MIMEText
 
 fp = open(outDir+"/Parcel"+date+"log.txt", 'w')
 msg = MIMEText (fp.read())
@@ -180,12 +178,5 @@ s = smtplib.SMTP(smtp)
 s.sendmail(me, you, msg.as_string())
 s.quit()
 
-
 # remove output directory (retaining only the zipfile)
-delTime=time.strftime ('%I:%M_%S %p')
-delMessage=(" : Removing '"+outDir+"'")
-
 shutil.rmtree(outDir)
-
-stopTime=time.strftime ('%I:%M_%S %p')
-
