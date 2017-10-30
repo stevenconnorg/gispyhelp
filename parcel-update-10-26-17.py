@@ -27,10 +27,10 @@
 ################################################
 # IMPORT LIBRARIES (USE PIP INSTALL IF NOT INSTALLED ALREADY)
 ################################################
-# Following this site for downloading geopandas and its dependencies on windows: http://geoffboeing.com/2014/09/using-geopandas-windows/
-
 import arcpy
 import os
+import shutil
+import zipfile
 from arcpy import env
 
 
@@ -101,8 +101,8 @@ SQL = "SystemEndDate IS NULL" # SQL statement to filter parcels
 join_type = "KEEP_ALL" # (FULL) OR "KEEP_COMMON" (INSIDE)
 
 # set email parameters
-sender = "arcgisadmin@bcad.org" # Email sender addrses
-receiver = "arcgisadmin@bcad.org" # Email receiver address
+sender = "sgonzalez@bcad.org" # Email sender addrses
+receiver = "sgonzalez@bcad.org" # Email receiver address
 smtp = "BCAD27.bcad.local" # Simple Mail Transer Protocol Server
 
  ###  ###  ###  ###  ###  ###  ###  ###  ###  ### 
@@ -142,21 +142,6 @@ shpTime=time.strftime ('%I:%M_%S %p')
 shpMessage=(" : Writing output shapefile '"+layerName+"' to '"+outDir+"'")
 arcpy.FeatureClassToShapefile_conversion(Input_Features=layerName, Output_Folder = outDir)
 
-# create a zip directory of output shapefile and friends
-zipTime=time.strftime ('%I:%M_%S %p')
-zipMessage=(" : Creating Zip directory of '"+outDir+"'")
-zf=zipfile.ZipFile(outDir+".zip",mode='w')
-zipf.close()
-
-
-# remove output directory (retaining only the zipfile)
-delTime=time.strftime ('%I:%M_%S %p')
-delMessage=(" : Removing '"+outDir+"'")
-import shutil
-shutil.rmtree(outDir)
-
-stopTime=time.strftime ('%I:%M_%S %p')
-
 # Write out results to logfile
 file = open (outDir+"/Parcel"+date+"log.txt", "w")
 file.write (printDate+' '+startTime+' : Starting Application Parcel Update \n')
@@ -170,12 +155,16 @@ file.write (stopTime+ ' : '+layerName+' successfully joined with '+jtableName+' 
 file.close()
 
 
+# create a zip directory of output shapefile and friends
+
+zipTime=time.strftime ('%I:%M_%S %p')
+zipMessage=(" : Creating Zip directory of '"+outDir+"'")
+zf=zipfile.ZipFile(outDir+".zip",mode='w')
+zipf.close()
 
 
 
 # send email if output parcel update exists
-
-
 import smtplib
 from email.mime.text import MIMEText
 
@@ -191,4 +180,12 @@ s = smtplib.SMTP(smtp)
 s.sendmail(me, you, msg.as_string())
 s.quit()
 
+
+# remove output directory (retaining only the zipfile)
+delTime=time.strftime ('%I:%M_%S %p')
+delMessage=(" : Removing '"+outDir+"'")
+
+shutil.rmtree(outDir)
+
+stopTime=time.strftime ('%I:%M_%S %p')
 
