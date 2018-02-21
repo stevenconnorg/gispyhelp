@@ -193,15 +193,15 @@ try:
 						arcpy.mapping.AddLayer(df,layer,"BOTTOM")		# add aerial imagery to bottom of dataframe
 						layers = arcpy.mapping.ListLayers(df)  
 						for l in layers:  
-							if l.isGroupLayer and l.name == layer.name:  
-								glayers = arcpy.mapping.ListLayers(l)  
-								for gl in glayers:  
-									if gl.name == "Footprint":  
-										gl.transparency = 100
-										break
-						silentremove(in_mosaicLayer) # delete mosaic layer created
-						del in_mosaicLayer # remove lock on mosaic layer
-						del layer # remove lock on layer
+                                                    if l.isGroupLayer and l.name == layer.name:  
+                                                        glayers = arcpy.mapping.ListLayers(l)  
+                                                        for gl in glayers:  
+                                                                if gl.name == "Footprint":  
+                                                                        gl.transparency = 100
+                                                                        break
+                                                silentremove(in_mosaicLayer) # delete mosaic layer created
+                                                del in_mosaicLayer # remove lock on mosaic layer
+                                                del layer # remove lock on layer
 					else:
 						par.transparency = 0 # set parcel transparency to 0 if no imagery found
 						arcpy.AddMessage("No imagery found for " + df.name + " in "+ mxdname)
@@ -228,9 +228,9 @@ try:
 					arcpy.AddMessage("Cleaning " +outpath+ " of " + df_pdf)
 					silentremove(df_pdf) # delete intermediate pdf doc. comment out if you want a pdf for each individual mxd/year
 					arcpy.AddMessage("Removing lock on mosaic dataset layer")
-			arcpy.AddMessage("Removing lock on " + mxdname)
-			del mapdoc # remove lock on mapdoc template copy
-	
+        arcpy.AddMessage("Removing lock on " + mxdname)
+        del mapdoc # remove lock on mapdoc template copy
+
     ## delete intermediate data saved to file
 	arcpy.AddMessage("Cleaning " +outpath+ " of intermediate data")
 	for mergeFile in glob.glob(outpath+"/mrg*"):
