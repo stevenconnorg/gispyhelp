@@ -42,10 +42,10 @@ parcel_name<-"Parcels_without_attributes" 			# what is the parcel layer name wit
 cn<-odbcDriverConnect(							# make SQL server connection for IS data table
 		connection="Driver=				
 			{SQL Server Native Client 11.0};
- 		server=BCAD56;
- 		database=maint10;
-		Uid=gdo;
- 		Pwd=PASSWORD;")
+ 		server=xxxxxx;
+ 		database=xxxxxxx;
+		Uid=xxxxxx;
+ 		Pwd=xxxxxxx;")
 
 
 
