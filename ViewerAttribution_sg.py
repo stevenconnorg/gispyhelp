@@ -626,7 +626,6 @@ installGDB = installationgdbList[3]
 # or apply function across geodatabases in serial...
 for installGDB in installationgdbList:
     compareGDBs(installGDB,compGDB)
-  
 
 # or apply function across geodatabases in parallel!
 from joblib import Parallel, delayed
@@ -634,6 +633,33 @@ import multiprocessing
 num_cores = multiprocessing.cpu_count()
 num_cores = num_cores - 1
 Parallel(n_jobs=num_cores)(delayed(compareGDBs)(installGDB) for installGDB in installationgdbList)
+
+
+# get info on the target geodatabase
+arcpy.env.workspace = compGDB
+d = []
+for theFDS in arcpy.ListDatasets():
+    for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
+        minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+        minFields = list(minFields)
+        for FLD in minFields:
+            d.append((theFDS,theFC,FLD))
+
+data.head(d)
+
+dFLD = []
+for theFDS in arcpy.ListDatasets():
+    for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
+        minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+        minFields = list(minFields)
+        FLDcount=len(minFields)
+        dFLD.append((theFDS,theFC,FLDcount))
+data.head(dFLD)
+arcpy.env.workspace(installGDB)
+ 
+arcpy.env.workspace(installGDB)
+ 
+
 
 
 # borrowed from http://joelmccune.com/arcgis-to-pandas-data-frame-using-a-search-cursor/
@@ -695,8 +721,7 @@ def table_to_pandas_dataframe(table, field_names=None):
 
 
 
-import numpy
-import pandas
+
 
 
 def summariseComparisons(installGDB):
@@ -719,7 +744,8 @@ def summariseComparisons(installGDB):
 
     
     '''
-    
+    import numpy
+    import pandas
     ## CONVERT TABLES TO PANDAS DATAFRAMES
     missingFDTblName="MissingFDS"
     missingFCTblName="MissingFCs"
@@ -841,8 +867,10 @@ def summariseComparisons(installGDB):
 
 
     # FOR EACH FEATURE CLASS GET TOTAL COUNTS OF DETERMINANT and INTEDETERMINANT (NULL + OTHER + TBD) VALUES, THEN PROPORTION OF DETERMINANT VALUES 
+    # TK sic
+    indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INTD_COUNT'].agg('sum').fillna(0).reset_index()
+    # indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
 
-    indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
     indtCntByFLD=pandas.DataFrame(indtCntByFLD)
 
     detCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_DET_COUNT'].agg('sum').fillna(0).reset_index()
@@ -910,6 +938,8 @@ def summariseComparisons(installGDB):
     if arcpy.Exists(gdbTbl):
         arcpy.Delete_management(gdbTbl)
     arcpy.da.NumPyArrayToTable(x, gdbTbl)
+
+summariseComparisons(installGDB)
 
 # apply in parallel
 Parallel(n_jobs=num_cores)(delayed(summariseComparisons)(installGDB) for installGDB in installationgdbList)
