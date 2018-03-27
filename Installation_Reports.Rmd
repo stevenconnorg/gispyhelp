@@ -1,0 +1,179 @@
+---
+output: pdf_document
+author: "AFCEC"
+params: 
+    set_title: "My Title!"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+---
+title: `r paste0(installationName,"Missing Data Report")`
+---
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+Sys.setenv(PATH = paste(Sys.getenv("PATH"), "C:\\Program Files\\MiKTeX 2.9\\miktex\\x64\\bin", sep=.Platform$path.sep))
+suppressWarnings(suppressPackageStartupMessages(library(ggplot2)))
+suppressWarnings(suppressPackageStartupMessages(library(dplyr)))
+suppressWarnings(suppressPackageStartupMessages(library(leaflet)))
+suppressWarnings(suppressPackageStartupMessages(library(DT)))
+suppressWarnings(suppressPackageStartupMessages(library(stringr)))
+library(knitr)
+library(markdown)
+library(rmarkdown)
+library(rgdal)
+library(sf)
+library(devtools)
+library(Rcpp)
+library(kableExtra)
+```
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+Overview <- sf::st_read(dsn = installationGDB, layer = "Overview",quiet=TRUE)
+MissingFDS <- sf::st_read(dsn = installationGDB, layer = "MissingFDS",quiet=TRUE)
+MissingFCs <- sf::st_read(dsn = installationGDB, layer = "MissingFCs",quiet=TRUE)
+EmptyFeatureClasses <- sf::st_read(dsn = installationGDB, layer = "EmptyFeatureClasses",quiet=TRUE)
+Determinant_Values_by_FC <- sf::st_read(dsn = installationGDB, layer = "Determinant_Values_by_FC",quiet=TRUE)
+NullCellCountbyFC <- sf::st_read(dsn = installationGDB, layer = "NullCellCountbyFC",quiet=TRUE)
+TBDCellCountbyFC <- sf::st_read(dsn = installationGDB, layer = "TBDCellCountbyFC",quiet=TRUE)
+OtherCellCountbyFC <- sf::st_read(dsn = installationGDB, layer = "OtherCellCountbyFC",quiet=TRUE)
+MissingData <- sf::st_read(dsn = installationGDB, layer = "MissingData",quiet=TRUE)
+
+
+```
+# Summary
+
+1. `r Overview$MissingFDScount` : Total Number of Missing Feature Datasets   
+2. `r Overview$MissingFCcount` : Total Number of Missing Feature Class (within included Feature Datasets)  
+3. `r Overview$TotalMissingFields` : Total Number of Missing Fields (within included Feature Classes  
+4. `r nrow(MissingFCs)` : Total Number of Missing Feature Classes   
+5. `r Overview$InclFeatsEmpty` : Total Number of Feature Classes Empty (within included Feature Datasets)  
+6. `r Determinant_Values_by_FC$InclFeatsEmpty` : Total Number of Feature Classes Empty (within included Feature Datasets)  
+7. `r sum(MissingData$TOTAL_INTD_COUNT)` : Total number of cells are missing data (i.e.: 'Null', 'TBD', or 'Other')   
+8. `r sum(MissingData$NULL_FC_COUNT)` : Total number of cells are 'Null' data   
+9. `r sum(MissingData$TBD_FC_COUNT)` : Total number of cells are 'TBD' data   
+10. `r sum(MissingData$OTHER_FC_COUNT)` : Total number of cells are 'Other' data   
+
+# What's included in this packet?
+
+An overview of Null data found in your geodatabase.
+
+## Missing Feature Datasets
+
+Within `r installationName`'s geodatabase, a total of `r nrow(MissingFDS)` Feature Datasets are not included. The 'Missing Feature Datasets' table gives a listing of all the Feature Datasets missing.
+
+## Missing Feature Classes
+Of the Feature Datasets properly included in `r installationName`'s geodatabase,`r nrow(MissingFCs)` are not present. The 'Missing Feature Classes' table gives a listing of all the Feature Classes missing, along with the associated Feature Dataset.
+
+
+## Included, but Empty, Feature Classes
+Of the Feature Classes properly included,`r Overview$InclFeatsEmpty` are empty. The 'Included, but Empty, Feature Classes' table gives a listing of all the included, but empty, Feature Classes in `r installationName`'s geodatabase.
+
+
+## Counts of Determined and Indetermined Feature Classes
+Within the correctly
+
+## Null Count by Feature Class
+
+## Other Cell Count by Feature Class
+
+## TBD Cell Count by Feature Class
+
+
+
+\pagebreak
+
+
+
+# Missing Feature Datasets
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+MissingFDS<-MissingFDS[ , -which(names(MissingFDS) %in% c("INSTALLATION"))]
+kable(MissingFDS, booktabs = T, caption = "Missing Feature Datasets")
+
+```
+
+
+
+\pagebreak
+
+# Included, but Empty, Feature Classes 
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+EmptyFeatureClasses<-EmptyFeatureClasses[ , -which(names(EmptyFeatureClasses) %in% c("INSTALLATION","TOTAL_EMPTY_FIELDS"))]
+kable(EmptyFeatureClasses, booktabs = T, caption = "Empty Feature Classes")
+
+```
+
+
+\pagebreak
+
+
+# Missing Feature Classes
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+MissingFCs<-MissingFCs[ , -which(names(MissingFCs) %in% c("INSTALLATION"))]
+MissingFCs<-MissingFCs[,c("FDS","FC_MISSING")]
+kable(df, booktabs = T, caption = "Missing Feature Classes")
+```
+
+
+
+
+\pagebreak
+
+
+
+# Percent of Values Not 'Null', 'TBD', or 'Other'
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+Determinant_Values_by_FC<-Determinant_Values_by_FC[ , -which(names(Determinant_Values_by_FC) %in% c("INSTALLATION","TOTAL_DET_COUNT","TOTAL_INTD_COUNT"))]
+colnames(Determinant_Values_by_FC)[3] <- "Values_Determinated(%)"
+Determinant_Values_by_FC$`Values_Determinated(%)`<-Determinant_Values_by_FC$`Values_Determinated(%)`*100
+Determinant_Values_by_FC$`Values_Determinated(%)`<-round(Determinant_Values_by_FC$`Values_Determinated(%)`,digits=1)
+
+kable(Determinant_Values_by_FC,  booktabs = T, caption = "Count of Null Cells by Feature Class") %>%
+kable_styling(latex_options = c("repeat_header", "scale_down")) %>%
+landscape()
+
+```
+
+
+\pagebreak
+
+
+
+# 'Null' Count by Feature Class
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+NullCellCountbyFC<-NullCellCountbyFC[ , -which(names(NullCellCountbyFC) %in% c("INSTALLATION"))]
+kable(NullCellCountbyFC, longtable = T, booktabs = T, caption = "Count of Null Cells by Feature Class") %>%
+kable_styling(latex_options = c("repeat_header", "scale_down"))
+
+
+```
+
+
+\pagebreak
+
+
+
+# 'TBD' Count by Feature Class
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+TBDCellCountbyFC<-TBDCellCountbyFC[ , -which(names(TBDCellCountbyFC) %in% c("INSTALLATION"))]
+kable(TBDCellCountbyFC, longtable = T, booktabs = T, caption = "Count of Null Cells by Feature Class") %>%
+kable_styling(latex_options = c("repeat_header", "scale_down"))
+
+
+```
+
+
+
+
+\pagebreak
+
+
+
+# 'Other' Count by Feature Class
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+OtherCellCountbyFC<-OtherCellCountbyFC[ , -which(names(OtherCellCountbyFC) %in% c("INSTALLATION"))]
+kable(OtherCellCountbyFC, longtable = T, booktabs = T, caption = "Count of Null Cells by Feature Class") %>%
+kable_styling(latex_options = c("repeat_header", "scale_down"))
+
+
+```
