@@ -19,7 +19,7 @@ library(sf)
 # these reports are saved in output_dir with the name specified by output_file
 
 installationGDBs <- list.files(paste0(getwd(),"/gdbs"),full.names = T)
-installationGDB<-installationGDBs[3]
+installationGDBs<-installationGDBs[3:4]
 for (installationGDB in installationGDBs){
   
   basename<-basename(installationGDB)
@@ -31,6 +31,23 @@ for (installationGDB in installationGDBs){
           output_format = "pdf_document",
           output_file = paste0(installationName,"_Missing_Data_Report_",Sys.Date(),"_.pdf"),
           output_dir = reportDir)
-  
 }
 
+# R version 3.4.1 (2017-06-30)
+# Platform: x86_64-w64-mingw32/x64 (64-bit)
+# Running under: Windows >= 8 x64 (build 9200)
+# 
+# Matrix products: default
+# 
+# locale:
+#   [1] LC_COLLATE=English_United States.1252  
+# LC_CTYPE=English_United States.1252    
+# LC_MONETARY=English_United States.1252
+# LC_NUMERIC=C
+# LC_TIME=English_United States.1252    
+# 
+# attached base packages:
+#   [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# loaded via a namespace (and not attached):
+#   [1] compiler_3.4.1 tools_3.4.1    yaml_2.1.14   
