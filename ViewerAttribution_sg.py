@@ -484,9 +484,11 @@ def compareGDBs(installGDB,compGDB):
                                 ## incvalstr = incorrectly populated values (values not in accordance with domain)
                                 valstr = str()
                                 incvalstr = str()
-                                if len(vals)> 50:
-                                        valstr = "Greater than 50 unique values -- not included."
-                                        incvalstr = "Greater than 50 unique values -- not included."
+                                fcCount = arcpy.GetCount_management (theFC)
+                                nrow = int(fcCount.getOutput(0))
+                                if len(vals) > (.9 * nrow):
+                                        valstr = "90% of correctly populated values are unique -- not counted."
+                                        incvalstr = "90% of incorrectly populated values are unique -- not counted."
                                 else:
                                     for v in vals:
                                         
@@ -621,21 +623,26 @@ def compareGDBs(installGDB,compGDB):
 #     print e.args[0]
 # =============================================================================
         
-      
-installGDB = installationgdbList[3]
+installationgdbList = installationgdbList[4:9]
+
+# or apply function across geodatabases in parallel!
+
+# =============================================================================
+# from joblib import Parallel, delayed
+# import multiprocessing
+# num_cores = multiprocessing.cpu_count()
+# num_cores = num_cores - 1
+# Parallel(n_jobs=num_cores)(delayed(compareGDBs)(installGDB) for installGDB in installationgdbList)
+# 
+# =============================================================================
 # or apply function across geodatabases in serial...
 for installGDB in installationgdbList:
     compareGDBs(installGDB,compGDB)
 
-# or apply function across geodatabases in parallel!
-from joblib import Parallel, delayed
-import multiprocessing
-num_cores = multiprocessing.cpu_count()
-num_cores = num_cores - 1
-Parallel(n_jobs=num_cores)(delayed(compareGDBs)(installGDB) for installGDB in installationgdbList)
-
+###
 
 # get info on the target geodatabase
+import pandas
 arcpy.env.workspace = compGDB
 d = []
 for theFDS in arcpy.ListDatasets():
@@ -644,17 +651,12 @@ for theFDS in arcpy.ListDatasets():
         minFields = list(minFields)
         for FLD in minFields:
             d.append((theFDS,theFC,FLD))
+d = pandas.DataFrame(d, columns=('FDS', 'FC', 'FLD'))
 
-data.head(d)
 
-dFLD = []
-for theFDS in arcpy.ListDatasets():
-    for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
-        minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
-        minFields = list(minFields)
-        FLDcount=len(minFields)
-        dFLD.append((theFDS,theFC,FLDcount))
-data.head(dFLD)
+dFLD = pandas.DataFrame(dFLD, columns=('FDS', 'FC', 'FLD_Count'))
+
+
 arcpy.env.workspace(installGDB)
  
 arcpy.env.workspace(installGDB)
@@ -869,7 +871,6 @@ def summariseComparisons(installGDB):
     # FOR EACH FEATURE CLASS GET TOTAL COUNTS OF DETERMINANT and INTEDETERMINANT (NULL + OTHER + TBD) VALUES, THEN PROPORTION OF DETERMINANT VALUES 
     # TK sic
     indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INTD_COUNT'].agg('sum').fillna(0).reset_index()
-    # indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
 
     indtCntByFLD=pandas.DataFrame(indtCntByFLD)
 
@@ -939,8 +940,11 @@ def summariseComparisons(installGDB):
         arcpy.Delete_management(gdbTbl)
     arcpy.da.NumPyArrayToTable(x, gdbTbl)
 
-summariseComparisons(installGDB)
 
-# apply in parallel
-Parallel(n_jobs=num_cores)(delayed(summariseComparisons)(installGDB) for installGDB in installationgdbList)
 
+for installGDB in installationgdbList:
+    summariseComparisons(installGDB)
+
+## create reports for all gdbs
+import subprocess 
+subprocess.call("Rscript Installation_Reports.R", shell=False)
