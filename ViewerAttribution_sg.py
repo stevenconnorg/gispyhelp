@@ -12,17 +12,16 @@
 #-------------------------------------------------------------------------------
 
 # Import modules
-import arcpy, time, os, sys, collections
+import arcpy, os, collections, numpy, pandas, time
 from pandas import DataFrame
 from datetime import datetime
 from operator import itemgetter
-import pickle
-import time
 from datetime import date
 
+
 # Start time
-time = datetime.now()
-print(time)
+timenow = datetime.now()
+print(timenow)
 
 # Get username
 #username = getpass.getuser()
@@ -33,34 +32,32 @@ print(time)
 #mainDir = os.path.dirname(os.path.realpath(__file__)))
 
 # change this to the location of python script
-mainDir = "C:\\Users\\stevenconnorg\\Documents\\knight-federal-solutions\\ViewerAttribution"
+mainDir = "C:\\Users\\stevenconnorg\\Documents\\knight-federal-solutions\\Installation_Feedback"
 os.chdir(mainDir)
 
 # within the main directory, create a directory called "gdbs" that houses all the geodatabase you want to compare.
 installationGDBdir = os.path.join(mainDir,"gdbs")
-
+targetGDBdir = os.path.join(mainDir,"gdbs-target")
 # or get directory of geodatabases as parameters 
 # installationGDBdir = sys.argv[1] 
 
 
 # get a list of all the geodatabase paths...
 installationgdbList = []
+targetgdbList = []
+
 
 
 for subdir, dirs, files in os.walk(installationGDBdir):
     for subdir in dirs:
         subdirPath = os.path.join(installationGDBdir,subdir)
         installationgdbList.append(subdirPath)
-        installationName = os.path.splitext(os.path.basename(subdir))[0]
 
-# compGDB = mainDir+"/Viewer_minimum.gdb"
-compGDB = mainDir+"/Full_geodatabase.gdb"
-
-# or get comparison database as parameter !
-# compGDB = sys.argv[2] 
-
-arcpy.env.workspace = compGDB
-
+for subdir, dirs, files in os.walk(targetGDBdir):
+    for subdir in dirs:
+        subdirPath = os.path.join(targetGDBdir,subdir)
+        targetgdbList.append(subdirPath)
+        
 
 # CREATE TABLE TO APPEND ERRORS FOR EACH FEATURE DATASET
    # if error table already exists, delete rows
@@ -93,7 +90,7 @@ def createNullTable(installGDB,nullTableName="MissingData"):
     # break out of individual values and counts for Null, None, NA, etc...
     arcpy.AddField_management(errorTable, "OTHER_VALUE_COUNTS", "TEXT", field_length = 32766)   
     # total number of indeterminant values (NULLS + Others + TBD)
-    arcpy.AddField_management(errorTable, "TOTAL_INTD_COUNT", "LONG", field_length = 50)   
+    arcpy.AddField_management(errorTable, "TOTAL_INDT_COUNT", "LONG", field_length = 50)   
     # total number of indeterminant values (NULLS + Others + TBD)
     arcpy.AddField_management(errorTable, "TOTAL_DET_COUNT", "LONG", field_length = 50)   
     # Total Number of populated values (not null, tbd, or other)
@@ -140,6 +137,92 @@ def createMissingFDstbl(installGDB,missingFDTblName="MissingFDS"):
     # Installation Name
     arcpy.AddField_management(errorTable, "INSTALLATION", "TEXT", field_length = 100)         
     print (missingFDTblName + " Table Created in " + os.path.splitext(os.path.basename(installGDB) + "gdb")[0])
+
+  
+def getFeaturesdf(GDB):
+    '''
+    # to get unique FDS, FC, and FIELDS across a geodatabase
+    input = path to GDB
+    output= dataframe
+    '''
+
+    d = []
+    arcpy.env.workspace = GDB
+    for theFDS in arcpy.ListDatasets():
+        for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
+            minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(GDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+            minFields = list(minFields)
+            for FLD in minFields:
+                d.append((theFDS,theFC,FLD))
+    pdataframe = pandas.DataFrame(d, columns=('FDS', 'FC', 'FLD'))
+    return(pdataframe)
+
+
+def get_field_names(table):
+    """
+    Get a list of field names not inclusive of the geometry and object id fields.
+    :param table: Table readable by ArcGIS
+    :return: List of field names.
+    """
+    # list to store values
+    field_list = []
+
+    # iterate the fields
+    for field in arcpy.ListFields(table):
+
+        # if the field is not geometry nor object id, add it as is
+        if field.type != 'Geometry' and field.type != 'OID':
+            field_list.append(field.name)
+
+        # if geomtery is present, add both shape x and y for the centroid
+        elif field.type == 'Geometry':
+            field_list.append('SHAPE@XY')
+
+    # return the field list
+    return field_list
+
+
+def table_to_pandas_dataframe(table, field_names=None):
+    """
+    Load data into a Pandas Data Frame for subsequent analysis.
+    :param table: Table readable by ArcGIS.
+    :param field_names: List of fields.
+    :return: Pandas DataFrame object.
+    """
+    # if field names are not specified
+    if not field_names:
+
+        # get a list of field names
+        field_names = get_field_names(table)
+
+    # create a pandas data frame
+    dataframe = DataFrame(columns=field_names)
+
+    # use a search cursor to iterate rows
+    with arcpy.da.SearchCursor(table, field_names) as search_cursor:
+
+        # iterate the rows
+        for row in search_cursor:
+
+            # combine the field names and row items together, and append them
+            dataframe = dataframe.append(
+                dict(zip(field_names, row)), 
+                ignore_index=True
+            )
+
+    # return the pandas data frame
+    return dataframe
+
+
+# to get a pandas dataframe into a table
+def pandas_to_table(pddf,tablename):
+    x = numpy.array(numpy.rec.fromrecords(pddf))
+    names = pddf.dtypes.index.tolist()
+    x.dtype.names = tuple(names)
+    gdbTbl = os.path.join(installGDB,tablename)
+    if arcpy.Exists(gdbTbl):
+        arcpy.Delete_management(gdbTbl)
+    arcpy.da.NumPyArrayToTable(x, gdbTbl)
 
     
 def compareGDBs(installGDB,compGDB):
@@ -208,7 +291,7 @@ def compareGDBs(installGDB,compGDB):
                 12) OTHER_VALUE_COUNTS - the individual counts of each unique entry for OTHER cells
                         e.g.: " 'OTHER' has 1 feature. 'other'  has 1 feature. 'Other' has 2 feature. "
                         
-                13) TOTAL_INTD_COUNT - total count of cells with INDETERMINANT values (i.e.: Null, TBD, or Other values) per field
+                13) TOTAL_INDT_COUNT - total count of cells with INDETERMINANT values (i.e.: Null, TBD, or Other values) per field
     
                 14) TOTAL_DET_COUNT - total count of cells with DETERMINANT values (i.e.: NOT Null, NOT TBD, or NOT Other values) per field
     
@@ -222,19 +305,17 @@ def compareGDBs(installGDB,compGDB):
     
     '''
     
-    import time
-    from datetime import datetime 
     start_time = datetime.now()
     installationName = os.path.splitext(os.path.basename(installGDB))[0]
+    compName = os.path.splitext(os.path.basename(compGDB))[0]
     arcpy.env.workspace = installGDB
 
     
     
-    missingFDTblName="MissingFDS"
-    missingFCTblName="MissingFCs"
-    missingFLDTblName="MissingFields"
-    nullTableName="MissingData"
-
+    missingFDTblName=compName+"_MissingFDS"
+    missingFCTblName=compName+"_MissingFCs"
+    missingFLDTblName=compName+"_MissingFields"
+    nullTableName=compName+"_MissingData"
 
     # IF THE TABLE EXISTS, DELETE ROWS,
     # ELSE CREATE ERROR TABLE FOR EACH FEATURE DATASET IN COMPGDB
@@ -299,24 +380,39 @@ def compareGDBs(installGDB,compGDB):
     missFDSTable = os.path.join(installGDB,missingFDTblName)
     fdrows = arcpy.InsertCursor(missFDSTable)
     
+    
+    ## FIND FEATURE DATASETS, FEATURE CLASSES AND FIELDS NOT IN TARGET GEODATABASE
+    
+# =============================================================================
+#     installFeaturesdf = getFeaturesdf(GDB=installGDB)
+# 
+#     nonSDS_FDSFCFLD=compFeaturesdf.get(~installFeaturesdf.isin(compFeaturesdf))
+#     
+#     nonSDS_FDSFCFLD=installFeaturesdf.loc[installFeaturesdf.isin(compFeaturesdf)]
+#     
+#     
+#     pandas_to_table(nonSDS_FDSFCFLD,tablename="FDS_FC_NOT_IN_TARGET",installGDB)
+#     
+#     nonSDS_FDSFCFLD.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
+# 
+#     compFDSFCdf= compFeaturesdf.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
+#     installFDSFCdf= compFeaturesdf.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
+#     
+#     nonSDS_FDSFC=installFDSFCdf.loc[installFDSFCdf.isin(compFDSFCdf)]
+#     
+#     pandas_to_table(nonSDS_FDSFCFLD,tablename="FDS_FC_NOT_IN_TARGET",installGDB)    
+# =============================================================================
+    
+    
+    ## THEN WORK ON MISSING DATA
     arcpy.env.workspace = compGDB
     for theFDS in arcpy.ListDatasets():
         arcpy.env.workspace = compGDB
         for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
             minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
-# =============================================================================
-# 
-            reqDomains = (fld.domain for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
-#             for theFLD in minFields:
-#                 theFLD
-#                 today = date.today()
-#                 
-#                 import time
-#                 timenow = time.strftime('%I:%M:%S-%p')
-#                 
-# 
-# =============================================================================
-            import time
+            minF = list(minFields)
+            minF = [x.upper() for x in minF]
+            #reqDomains = (fld.domain for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
             today = date.today()
             timenow = time.strftime('%I:%M:%S-%p')
             printDate = today.strftime('%mm_%dd_%Y')
@@ -341,8 +437,7 @@ def compareGDBs(installGDB,compGDB):
                         if theFLD.name not in ignoreFLD:           
                             with arcpy.da.SearchCursor(os.path.join(installGDB,theFDS,theFC), str(theFLD.name).upper()) as cur:
                                 row.setValue("FIELD", theFLD.name)
-                                minF = list(minFields)
-                                minF = [x.upper() for x in minF]
+                                
                                 if theFLD.name.upper() not in minF:
                                     row.setValue("FIELD_NONSDS", "T")
                                 else:
@@ -358,7 +453,7 @@ def compareGDBs(installGDB,compGDB):
                                 nullValues = [None, "None", "none", "NONE", "","-99999","77777",77777, " ", "NA", "N/A", "n/a","NULL","Null","<NULL>","<Null>","  ","   ","    ","     "]
                                 otherValues = [ "Other", "other", "OTHER","88888",88888]
                                 tbdValues = ["tbd","TBD","To be determined","Tbd",99999,"99999"]
-                                indtList = nullValues + otherValues+ tbdValues
+                                #indtList = nullValues + otherValues+ tbdValues
                                 
                                 ## GET TOTAL COUNT OF VALUES
                                 countValues = collections.Counter(row[0] for row in cur)
@@ -386,7 +481,7 @@ def compareGDBs(installGDB,compGDB):
                                 row.setValue("NULL_FC_COUNT",sumNulls)
                                 row.setValue("TBD_FC_COUNT",sumTBD)
                                 row.setValue("OTHER_FC_COUNT",sumOther)             
-                                row.setValue("TOTAL_INTD_COUNT", sumIndt)
+                                row.setValue("TOTAL_INDT_COUNT", sumIndt)
                                 row.setValue("TOTAL_DET_COUNT", sumDetr)
                                                         
                                 # get other values to populate cell cleanly 
@@ -401,11 +496,11 @@ def compareGDBs(installGDB,compGDB):
                                         value =unicode(element[0].encode('utf-8'), errors="ignore")
                                     count =str(element[1])     
                                     if int(count) < 2 :
-                                        valCount = "'"+value+"' has "+count+" feature"
-                                        otherStrings = otherStrings + valCount +". "
+                                        valCount = count+" feature is '"+value+"'. "
+                                        otherStrings = otherStrings + valCount 
                                     else:
-                                        valCount = "'"+value+"' has "+count+" features"
-                                        otherStrings = otherStrings + valCount +". "
+                                        valCount = count+" features are '"+value+"'. "
+                                        otherStrings = otherStrings + valCount 
                                                          
                                 # get tbd values to populate cell cleanly 
                                 tbdStrings = str()
@@ -419,11 +514,11 @@ def compareGDBs(installGDB,compGDB):
                                         value =unicode(element[0].encode('utf-8'), errors="ignore")
                                     count =str(element[1])   
                                     if int(count) < 2 :
-                                        valCount = "'"+value+"' has "+count+" feature"
-                                        tbdStrings = tbdStrings + valCount +". "
+                                        valCount = count+" feature is '"+value+"'. "
+                                        tbdStrings = tbdStrings + valCount
                                     else:
-                                        valCount = "'"+value+"' has "+count+" features"
-                                        tbdStrings = tbdStrings + valCount +". "   
+                                        valCount = count+" features are '"+value+"'. "
+                                        tbdStrings = tbdStrings + valCount
                                                      
                                 # get null values to populate cell cleanly 
                                 nullStrings = str()
@@ -437,11 +532,11 @@ def compareGDBs(installGDB,compGDB):
                                         value =unicode(element[0].encode('utf-8'), errors="ignore")
                                     count =str(element[1])     
                                     if int(count) < 2 :
-                                        valCount = "'"+value+"' has "+count+" feature"
-                                        nullStrings = nullStrings + valCount +". "
+                                        valCount = count+" feature is '"+value+"'. "
+                                        nullStrings = nullStrings + valCount
                                     else:
-                                        valCount = "'"+value+"' has "+count+" features"
-                                        nullStrings = nullStrings + valCount +". "                       
+                                        valCount = count+" features are '"+value+"'. "
+                                        nullStrings = nullStrings + valCount                       
                                 
                                 
                                 
@@ -486,9 +581,9 @@ def compareGDBs(installGDB,compGDB):
                                 incvalstr = str()
                                 fcCount = arcpy.GetCount_management (theFC)
                                 nrow = int(fcCount.getOutput(0))
-                                if len(vals) > (.9 * nrow):
-                                        valstr = "90% of correctly populated values are unique -- not counted."
-                                        incvalstr = "90% of incorrectly populated values are unique -- not counted."
+                                if len(vals) > (.95 * nrow):
+                                        valstr = "95% of correctly populated values are unique -- not counted."
+                                        incvalstr = "95% of incorrectly populated values are unique -- not counted."
                                 else:
                                     for v in vals:
                                         
@@ -504,11 +599,11 @@ def compareGDBs(installGDB,compGDB):
                                                 dom =unicode(v[0].encode('utf-8'), errors="ignore")
                                             val =str(v[1])
                                             if val < 2:
-                                                domCount = "'"+dom+"' has "+val+" feature"
+                                                domCount = val+" feature is '"+dom+"'. "
                                                 valstr = valstr + domCount +". "
                                             else:
-                                               domCount = "'"+dom+"' has "+val+" features"
-                                               valstr = valstr + domCount +". " 
+                                               domCount = val+" features are '"+dom+"'. "
+                                               valstr = valstr + domCount 
                                         # CORRECTLY POPULATED CODED VALUES WITHIN A DOMAIN CONSTRAINED FIELD 
                                         elif domainVals != [] and v[0] in domainVals: 
                                             if v[0] is None:
@@ -520,11 +615,11 @@ def compareGDBs(installGDB,compGDB):
                                                 dom =unicode(v[0].encode('utf-8'), errors="ignore")
                                             val =str(v[1])
                                             if val < 2:
-                                                domCount = "'"+dom+"' has "+val+" feature"
+                                                domCount = val+" feature is '"+dom+"'. "
                                                 valstr = valstr + domCount +". "
                                             else:
-                                               domCount = "'"+dom+"' has "+val+" features"
-                                               valstr = valstr + domCount +". " 
+                                               domCount = val+" features are '"+dom+"'. "
+                                               valstr = valstr + domCount
                                         # CORRECTLY POPULATED RANGE VALUES WITHIN A DOMAIN CONSTRAINED FIELD                                    
                                         elif domainRng != [] and v[0] in domainRng:
                                         #elif domainRng != [] and [i for i in v if i in domainRng]:
@@ -537,11 +632,11 @@ def compareGDBs(installGDB,compGDB):
                                                 dom =unicode(v[0].encode('utf-8'), errors="ignore")
                                             val =str(v[1])
                                             if val < 2: 
-                                                domCount = "'"+dom+"' has "+val+" feature"
+                                                domCount = val+" feature is '"+dom+"'. "
                                                 valstr = valstr + domCount +". "
                                             else:
-                                               domCount = "'"+dom+"' has "+val+" features"
-                                               valstr = valstr + domCount +". " 
+                                               domCount = val+" features are '"+dom+"'. "
+                                               valstr = valstr + domCount
                                         # INCORRECTLY POPULATED VALUES WITHIN DOMAIN CONSTRAINED FIELDS
                                         else:    
                                             if v[0] is None:
@@ -553,11 +648,11 @@ def compareGDBs(installGDB,compGDB):
                                                 dom =unicode(v[0].encode('utf-8'), errors="ignore")
                                             val =str(v[1])
                                             if val < 2:
-                                                domCount = "'"+dom+"' has "+val+" feature"
-                                                incvalstr = incvalstr + domCount +". "
+                                                domCount = val+" feature is '"+dom+"'. "
+                                                incvalstr = incvalstr + domCount 
                                             else:
-                                               domCount = "'"+dom+"' has "+val+" features"
-                                               incvalstr = incvalstr + domCount +". "
+                                               domCount = val+" features are '"+dom+"'. "
+                                               incvalstr = incvalstr + domCount 
                                 # remove last comma at end of value string 
                                 row.setValue("POP_VALS",valstr)  
                                 row.setValue("INC_POP_VALS",incvalstr)  
@@ -610,157 +705,12 @@ def compareGDBs(installGDB,compGDB):
     del fldrows
     del fcrows
     
-    from datetime import datetime 
+    
     time_elapsed = datetime.now() - start_time 
     print('Time elapsed (hh:mm:ss.ms) {}'.format(time_elapsed))
             
-        
-# =============================================================================
-# except Exception as e:
-#     # Error time
-#     t = datetime.now()
-#     print(t)
-#     print e.args[0]
-# =============================================================================
-        
-installationgdbList = installationgdbList[4:9]
 
-# or apply function across geodatabases in parallel!
-
-# =============================================================================
-# from joblib import Parallel, delayed
-# import multiprocessing
-# num_cores = multiprocessing.cpu_count()
-# num_cores = num_cores - 1
-# Parallel(n_jobs=num_cores)(delayed(compareGDBs)(installGDB) for installGDB in installationgdbList)
-# 
-# =============================================================================
-# or apply function across geodatabases in serial...
-for installGDB in installationgdbList:
-    compareGDBs(installGDB,compGDB)
-
-###
-
-# get info on the target geodatabase
-import pandas
-arcpy.env.workspace = compGDB
-d = []
-for theFDS in arcpy.ListDatasets():
-    for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
-        minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
-        minFields = list(minFields)
-        for FLD in minFields:
-            d.append((theFDS,theFC,FLD))
-d = pandas.DataFrame(d, columns=('FDS', 'FC', 'FLD'))
-
-
-dFLD = pandas.DataFrame(dFLD, columns=('FDS', 'FC', 'FLD_Count'))
-
-
-arcpy.env.workspace(installGDB)
- 
-arcpy.env.workspace(installGDB)
- 
-
-
-
-# borrowed from http://joelmccune.com/arcgis-to-pandas-data-frame-using-a-search-cursor/
-def get_field_names(table):
-    """
-    Get a list of field names not inclusive of the geometry and object id fields.
-    :param table: Table readable by ArcGIS
-    :return: List of field names.
-    """
-    # list to store values
-    field_list = []
-
-    # iterate the fields
-    for field in arcpy.ListFields(table):
-
-        # if the field is not geometry nor object id, add it as is
-        if field.type != 'Geometry' and field.type != 'OID':
-            field_list.append(field.name)
-
-        # if geomtery is present, add both shape x and y for the centroid
-        elif field.type == 'Geometry':
-            field_list.append('SHAPE@XY')
-
-    # return the field list
-    return field_list
-
-
-def table_to_pandas_dataframe(table, field_names=None):
-    """
-    Load data into a Pandas Data Frame for subsequent analysis.
-    :param table: Table readable by ArcGIS.
-    :param field_names: List of fields.
-    :return: Pandas DataFrame object.
-    """
-    # if field names are not specified
-    if not field_names:
-
-        # get a list of field names
-        field_names = get_field_names(table)
-
-    # create a pandas data frame
-    dataframe = DataFrame(columns=field_names)
-
-    # use a search cursor to iterate rows
-    with arcpy.da.SearchCursor(table, field_names) as search_cursor:
-
-        # iterate the rows
-        for row in search_cursor:
-
-            # combine the field names and row items together, and append them
-            dataframe = dataframe.append(
-                dict(zip(field_names, row)), 
-                ignore_index=True
-            )
-
-    # return the pandas data frame
-    return dataframe
-
-
-
-
-
-
-
-def summariseComparisons(installGDB):
-    
-    '''
-    inputs: file paths to 2 geodatabases
-        installGDB = geodatabase to be compared against 'compGDB'
-        
-        
-    outputs: 4 tables created within input 'installGDB'
-    
-        NullCellCountbyFC (table)    : xxxxxxxxxxx?
-            -- fields within NullCellCountbyFC Table --
-            
-                1) INSTALLATION - xxxxxxxxxxx
-                        e.g.: xxxxx
-                2) FDS_MISSING - xxxxxxxxxxx
-    
-
-
-    
-    '''
-    import numpy
-    import pandas
     ## CONVERT TABLES TO PANDAS DATAFRAMES
-    missingFDTblName="MissingFDS"
-    missingFCTblName="MissingFCs"
-    missingFLDTblName="MissingFields"
-    nullTableName="MissingData"    
-
-    
-    nullTable = os.path.join(installGDB,nullTableName)
-    missFLDTable = os.path.join(installGDB,missingFLDTblName)
-    missFCTable = os.path.join(installGDB,missingFCTblName)
-    missFDSTable = os.path.join(installGDB,missingFDTblName)
-    
-    
     pdNullTbl= table_to_pandas_dataframe(nullTable, field_names=None)
     pdFLDTbl= table_to_pandas_dataframe(missFLDTable, field_names=None)
     pdFCTbl= table_to_pandas_dataframe(missFCTable, field_names=None)
@@ -773,104 +723,110 @@ def summariseComparisons(installGDB):
     pdFCTbl = pdFCTbl.replace('', numpy.NaN)
     pdFDSTbl = pdFDSTbl.replace('', numpy.NaN)
 
+    # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE INDETERMINANT
+    print ("Getting count of indeterminant cells per feature class for "+ installationName + " gdb compared with " + compName+ ".gdb")
+    indtCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
+
+    pandas_to_table(pddf=indtCntByFC,tablename=compName+"_IndtCellCountbyFC")
+    
+    # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE INDETERMINANT
+    print ("Getting count of indeterminant cells per feature class for "+installationName + ".gdb compared with " + compName+".gdb")
+    detCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_DET_COUNT'].agg('sum').fillna(0).reset_index()
+
+    pandas_to_table(pddf=detCntByFC,tablename=compName+"_DetCellCountbyFC")
+    
 
     # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE NULL
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'null' cells per feature class for "+installationName + ".gdb compared with " + compName+".gdb")
     nullCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['NULL_FC_COUNT'].agg('sum').fillna(0).reset_index()
 
-    nullCntByFC=pandas.DataFrame(nullCntByFC)
-
-    x = numpy.array(numpy.rec.fromrecords(nullCntByFC))
-    names = nullCntByFC.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"NullCellCountbyFC")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
+    pandas_to_table(pddf=nullCntByFC,tablename=compName+"_NullCellCountbyFC")
     
     # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE TBD
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'tbd' cells per feature class for "+installationName + ".gdb compared with " + compName+".gdb")
     tbdCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TBD_FC_COUNT'].agg('sum').fillna(0).reset_index()
     tbdCntByFC=pandas.DataFrame(tbdCntByFC)
 
-    x = numpy.array(numpy.rec.fromrecords(tbdCntByFC))
-    names = tbdCntByFC.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"TBDCellCountbyFC")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
+    pandas_to_table(pddf=tbdCntByFC,tablename=compName+"_TBDCellCountbyFC")
 
 
     # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE OTHER
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'other' cells per feature class for "+installationName + ".gdb compared with " + compName+".gdb")
     otherCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['OTHER_FC_COUNT'].agg('sum').fillna(0).reset_index()
     otherCntByFC=pandas.DataFrame(otherCntByFC)
-
-    x = numpy.array(numpy.rec.fromrecords(otherCntByFC))
-    names = otherCntByFC.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"OtherCellCountbyFC")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
+    pandas_to_table(pddf=otherCntByFC,tablename=compName+"_OtherCellCountbyFC")
+    
+    
+    # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE INDETERMINANT
+    totalCntByFC = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['POP_VALS_COUNT'].agg('sum').fillna(0).reset_index()
 
 
+    j1 = otherCntByFC.join ( tbdCntByFC.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
+               on=[ 'FDS','FC','INSTALLATION'], how='left' )
+    
+    j2 = j1.join ( nullCntByFC.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
+               on=[ 'FDS','FC','INSTALLATION'], how='left' )
+    
+    j3 = j2.join ( indtCntByFC.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
+               on=[ 'FDS','FC','INSTALLATION'], how='left' )
+    
+    j4 = j3.join ( detCntByFC.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
+               on=[ 'FDS','FC','INSTALLATION'], how='left' )
+    
+    j5 = j4.join ( totalCntByFC.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
+               on=[ 'FDS','FC','INSTALLATION'], how='left' )
+    
+    summary = pandas.DataFrame()
+    summary["INSTALLATION"]=j5.INSTALLATION
+    summary["FDS"]=j5.FDS  
+    summary["FC"]=j5.FC  
+    summary["OTHER_PCT"] = j5.OTHER_FC_COUNT/(j5.POP_VALS_COUNT)
+    summary["TBD_PCT"] = j5.TBD_FC_COUNT/(j5.POP_VALS_COUNT)
+    summary["NULL_PCT"] = j5.NULL_FC_COUNT/(j5.POP_VALS_COUNT)
+    summary["DETERMINED_PCT"] = j5.TOTAL_DET_COUNT/(j5.POP_VALS_COUNT)
+    summary["UNDETERMINED_PCT"] = j5.TOTAL_INTD_COUNT/(j5.POP_VALS_COUNT)
+    summary.sort_values(by=['UNDETERMINED_PCT'])
+    pandas_to_table(pddf=j5,tablename=compName+"_Summary_Cell_Count_by_FC")
+    
+    
+    pandas_to_table(pddf=summary,tablename=compName+"_Summary_Cell_Pct_by_FC")
     
     ''' do the above but grouping by field also '''
-        # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE NULL
+        # FOR EACH FIELD, GET COUNT OF CELLS THAT ARE NULL
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'null' cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
     nullCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION','FIELD'])['NULL_FC_COUNT'].agg('sum').fillna(0).reset_index()
 
     nullCntByFLD=pandas.DataFrame(nullCntByFLD)
     nullCntByFLD=nullCntByFLD.query('NULL_FC_COUNT > 0')
-    
-    x = numpy.array(numpy.rec.fromrecords(nullCntByFLD))
-    names = nullCntByFLD.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"NullCellCountbyFLD")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
+    pandas_to_table(pddf=nullCntByFLD,tablename=compName+"_NullCellCountbyFLD")
+   
     
     # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE TBD
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'tbd' cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
     tbdCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION','FIELD'])['TBD_FC_COUNT'].agg('sum').fillna(0).reset_index()
     tbdCntByFLD=pandas.DataFrame(tbdCntByFLD)
     tbdCntByFLD=tbdCntByFLD.query('TBD_FC_COUNT > 0')
+    pandas_to_table(pddf=tbdCntByFLD,tablename=compName+"_TBDCellCountbyFLD")
     
-    
-    x = numpy.array(numpy.rec.fromrecords(tbdCntByFLD))
-    names = tbdCntByFLD.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"TBDCellCountbyFLD")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
-
-
     # FOR EACH FEATURE CLASS, GET COUNT OF CELLS THAT ARE OTHER
     ## THEN EXPORT THEM TO THE GEODATABASE
+    print ("Getting count of 'other' cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
+
     otherCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION','FIELD'])['OTHER_FC_COUNT'].agg('sum').fillna(0).reset_index()
     otherCntByFLD=pandas.DataFrame(otherCntByFLD)
     otherCntByFLD=otherCntByFLD.query('OTHER_FC_COUNT > 0')
-
-    x = numpy.array(numpy.rec.fromrecords(otherCntByFLD))
-    names = otherCntByFLD.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"OtherCellCountbyFLD")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
-    
-    
-
-
-
+    pandas_to_table(pddf=otherCntByFLD,tablename=compName+"_OtherCellCountbyFLD")
 
     # FOR EACH FEATURE CLASS GET TOTAL COUNTS OF DETERMINANT and INTEDETERMINANT (NULL + OTHER + TBD) VALUES, THEN PROPORTION OF DETERMINANT VALUES 
     # TK sic
-    indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INTD_COUNT'].agg('sum').fillna(0).reset_index()
+    print ("Getting total count of 'indeterminant' cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
+
+    indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
 
     indtCntByFLD=pandas.DataFrame(indtCntByFLD)
 
@@ -880,70 +836,58 @@ def summariseComparisons(installGDB):
     indtDetCounts = detCntByFLD.join ( indtCntByFLD.set_index( [ 'FDS','FC','INSTALLATION'], verify_integrity=True ),
                    on=[ 'FDS','FC','INSTALLATION'], how='left' )
 
-    indtDetCounts['PERCENT_DETERMINED_VALUES'] = indtDetCounts.TOTAL_DET_COUNT/(indtDetCounts.TOTAL_INTD_COUNT+indtDetCounts.TOTAL_DET_COUNT)
+    indtDetCounts['PERCENT_DETERMINED_VALUES'] = indtDetCounts.TOTAL_DET_COUNT/(indtDetCounts.TOTAL_INDT_COUNT+indtDetCounts.TOTAL_DET_COUNT)
     
-
-    
-    x = numpy.array(numpy.rec.fromrecords(indtDetCounts))
-    names = indtDetCounts.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"Determinant_Values_by_FC")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
-
+    pandas_to_table(pddf=indtDetCounts,tablename=compName+"Determinant_Values_by_FC")
 
     ### FOR EACH FEATURE CLASS INCLUDED, HOW MANY ARE EMPTY? 
     emptyFCbyFDS=pdNullTbl.query("EMPTY_FC == 'T'").groupby(['FDS','FC','INSTALLATION']).size().reset_index()
     emptyFCbyFDS=pandas.DataFrame(emptyFCbyFDS)
     emptyFCbyFDS.columns = ['FDS','FC','INSTALLATION','TOTAL_EMPTY_FIELDS']
 
-    x = numpy.array(numpy.rec.fromrecords(emptyFCbyFDS))
-    names = emptyFCbyFDS.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"EmptyFeatureClasses")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
-    
 
     ### FOR EACH FEATURE CLASS INCLUDED, HOW MANY ARE EMPTY?
     emptyFCcnt = len(pdNullTbl.query("EMPTY_FC == 'T'").groupby(['FDS','FC','EMPTY_FC']).size().reset_index() )
     nonemptyFCcnt = len(pdNullTbl.query("EMPTY_FC == 'F'").groupby(['FDS','FC','EMPTY_FC']).size().reset_index() )
-    installationName = os.path.splitext(os.path.basename(installGDB))[0]
+    
+    
+    if emptyFCbyFDS.empty:
+        emptyFLDsumFDS = "NA - no empty FCs"
+    else:
+        emptyFLDsumFDS = emptyFCbyFDS.groupby(['INSTALLATION']).agg('sum').fillna(0).reset_index()
+        emptyFLDsumFDS = emptyFLDsumFDS.iloc[0]['TOTAL_EMPTY_FIELDS']
+    
+    emptyFLDsum = pdNullTbl.query("POP_VALS_COUNT ==0").groupby(['FDS','FC','INSTALLATION']).size().reset_index()
+    
+    emptyFCbyFDS = emptyFCbyFDS.drop('INSTALLATION', 1) # 1 = by column, 0 by index
+    
+    pandas_to_table(pddf=emptyFCbyFDS,tablename=compName+"_EmptyFeatureClasses")
 
-
-    emptyFLDsum = emptyFCbyFDS.groupby(['INSTALLATION'])['TOTAL_EMPTY_FIELDS'].agg('sum').fillna(0).reset_index()
-    emptyFLDsum = emptyFLDsum.iloc[0]['TOTAL_EMPTY_FIELDS']
-    
-    
-    
-    
     ### GET NUMBER OF MISSING FEATURE DATASETS
     missingFDScnt = pdFDSTbl.groupby(['FDS_MISSING','INSTALLATION']).ngroups
     
     ### GET NUMBER OF MISSING FEATURE CLASSES per FEATURE DATASET
     missingFCcnt = pdFCTbl.groupby(['FDS','FC_MISSING','INSTALLATION']).ngroups
 
-
     # BIND DATA INTO A PANDAS DATAFRAME
-    d = {'Installation':[installationName],'MissingFDScount': [missingFDScnt], 'MissingFCcount': [missingFCcnt],'InclFeatsEmpty':[emptyFCcnt],'InclFeatsNonEmpty':[nonemptyFCcnt],'TotalMissingFields':[emptyFLDsum]}
+    d = {
+         'Installation':[installationName],
+         'MissingFDScount': [missingFDScnt],
+         'MissingFCcount': [missingFCcnt],
+         'InclFeatsEmpty':[emptyFCcnt],
+         'InclFeatsNonEmpty':[nonemptyFCcnt],
+         'TotalEmptyFields':[emptyFLDsum],
+         'TotalEmptyFieldsfromEmptyFC':[emptyFLDsumFDS]
+         }
     
-    
-    
-    df = pandas.DataFrame(data=d)
-    x = numpy.array(numpy.rec.fromrecords(df))
-    names = df.dtypes.index.tolist()
-    x.dtype.names = tuple(names)
-    gdbTbl = os.path.join(installGDB,"Overview")
-    if arcpy.Exists(gdbTbl):
-        arcpy.Delete_management(gdbTbl)
-    arcpy.da.NumPyArrayToTable(x, gdbTbl)
-
+    d= pandas.DataFrame(d)
+    pandas_to_table(pddf=d,tablename=compName+"_Overview")
 
 
 for installGDB in installationgdbList:
-    summariseComparisons(installGDB)
+    for compGDB in targetgdbList:
+        compareGDBs(installGDB,compGDB)
+
 
 ## create reports for all gdbs
 import subprocess 
