@@ -5,7 +5,16 @@
 # File 1: Should be an R-Script 
 # contains a loop that iteratively calls an Rmarkdown file (i.e. File 2)
 
-setwd("C:\\Users\\stevenconnorg\\Documents\\knight-federal-solutions\\ViewerAttribution")
+
+### use packrat for package management
+setwd("C:\\Users\\stevenconnorg\\Documents\\knight-federal-solutions\\Installation_Feedback")
+#library(packrat)
+#packrat::init(options = list(ignored.packages = c("RgoogleMaps","rprojroot","dunits","proto","rgdal","jpeg")))
+packrat::opts$ignored.packages(c("RgoogleMaps","dunits","proto","rgdal","jpeg"))
+#packrat::snapshot()
+#packrat::status()
+#packrat::clean() 
+#packrat::snapshot()
 
 
 library(knitr)
@@ -19,18 +28,28 @@ library(sf)
 # these reports are saved in output_dir with the name specified by output_file
 
 installationGDBs <- list.files(paste0(getwd(),"/gdbs"),full.names = T)
-installationGDBs<-installationGDBs[3:4]
+targetGDBs <- list.files(paste0(getwd(),"/gdbs-target"),full.names = T)
+
+installationGDBs<-installationGDBs[1:7]
+targetGDBs<-targetGDBs[1]
+
 for (installationGDB in installationGDBs){
-  
-  basename<-basename(installationGDB)
-  installationName<-tools::file_path_sans_ext(basename)
-  reportDir<-paste0(getwd(),"/Missing_Data_Reports/",installationName)
-  dir.create(reportDir,recursive=TRUE,showWarnings = F)
-  
-  rmarkdown::render(input = paste0(getwd(),"/Installation_Reports.Rmd"),
-          output_format = "pdf_document",
-          output_file = paste0(installationName,"_Missing_Data_Report_",Sys.Date(),"_.pdf"),
-          output_dir = reportDir)
+  for (targetGDB in targetGDBs){
+    
+    tbasename<-basename(targetGDB)
+    compName<-tools::file_path_sans_ext(tbasename)
+    
+    basename<-basename(installationGDB)
+    installationName<-tools::file_path_sans_ext(basename)
+    
+    reportDir<-paste0(getwd(),"/Missing_Data_Reports/",installationName)
+    dir.create(reportDir,recursive=TRUE,showWarnings = F)
+    
+    rmarkdown::render(input = paste0(getwd(),"/Installation_Reports.Rmd"),
+            output_format = "pdf_document",
+            output_file = paste0(installationName,"_Missing_Data_Report_",compName,"_",Sys.Date(),".pdf"),
+            output_dir = reportDir)
+  }
 }
 
 # R version 3.4.1 (2017-06-30)
