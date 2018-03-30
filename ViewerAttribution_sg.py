@@ -158,6 +158,7 @@ def getFeaturesdf(GDB):
     return(pdataframe)
 
 
+
 def get_field_names(table):
     """
     Get a list of field names not inclusive of the geometry and object id fields.
@@ -223,6 +224,7 @@ def pandas_to_table(pddf,tablename):
     if arcpy.Exists(gdbTbl):
         arcpy.Delete_management(gdbTbl)
     arcpy.da.NumPyArrayToTable(x, gdbTbl)
+    del gdbTbl
 
     
 def compareGDBs(installGDB,compGDB):
@@ -383,26 +385,26 @@ def compareGDBs(installGDB,compGDB):
     
     ## FIND FEATURE DATASETS, FEATURE CLASSES AND FIELDS NOT IN TARGET GEODATABASE
     
-# =============================================================================
-#     installFeaturesdf = getFeaturesdf(GDB=installGDB)
-# 
-#     nonSDS_FDSFCFLD=compFeaturesdf.get(~installFeaturesdf.isin(compFeaturesdf))
-#     
-#     nonSDS_FDSFCFLD=installFeaturesdf.loc[installFeaturesdf.isin(compFeaturesdf)]
-#     
-#     
-#     pandas_to_table(nonSDS_FDSFCFLD,tablename="FDS_FC_NOT_IN_TARGET",installGDB)
-#     
-#     nonSDS_FDSFCFLD.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
-# 
-#     compFDSFCdf= compFeaturesdf.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
-#     installFDSFCdf= compFeaturesdf.drop_duplicates(subset=["FDS","FC"], keep='first', inplace=False)
-#     
-#     nonSDS_FDSFC=installFDSFCdf.loc[installFDSFCdf.isin(compFDSFCdf)]
-#     
-#     pandas_to_table(nonSDS_FDSFCFLD,tablename="FDS_FC_NOT_IN_TARGET",installGDB)    
-# =============================================================================
-    
+    installFeaturesdf = getFeaturesdf(GDB=installGDB)
+
+    if installFeaturesdf.equals(compFeaturesdf):
+        nonSDSdf = pandas.DataFrame()
+        pandas_to_table(nonSDSdf,tablename="NON_SDS_FC") 
+        print ("No non-SDS feature datasets, classes, or fields")
+    else:
+        print ("Getting Feature Dataset/Feature Class combos in "+installationName + ".gdb that are not in " + compName+".gdb")
+        installFClist = list(installFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+        compFClist = list(compFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+             
+        nonSDSFCslist = list(set(installFClist) -set(compFClist))
+
+
+        nonSDSdf = pandas.DataFrame()
+        nonSDSdf["FDS"]=[i.split('/', 1)[0] for i in nonSDSFCslist]
+        nonSDSdf["FC"]=[i.split('/', 1)[1] for i in nonSDSFCslist]
+        print ("Feature Classes in "+installationName+" not included in target geodatabase "+ compName+".")
+        nonSDSdf
+        pandas_to_table(nonSDSdf,tablename="NON_SDS_FC")           
     
     ## THEN WORK ON MISSING DATA
     arcpy.env.workspace = compGDB
@@ -432,16 +434,16 @@ def compareGDBs(installGDB,compGDB):
                     # IF required field exists....
                     for theFLD in arcpy.ListFields(os.path.join(installGDB,str(theFDS).upper(),str(theFC).upper())):
                         arcpy.env.workspace = installGDB
-                        ignoreFLD = ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area']
                         row = nullrows.newRow()
+                        if theFLD.name.upper() not in minF:
+                            row.setValue("FIELD_NONSDS", "T")
+                        else:
+                           row.setValue("FIELD_NONSDS", "F") 
+                        ignoreFLD = ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area']
                         if theFLD.name not in ignoreFLD:           
                             with arcpy.da.SearchCursor(os.path.join(installGDB,theFDS,theFC), str(theFLD.name).upper()) as cur:
                                 row.setValue("FIELD", theFLD.name)
                                 
-                                if str(theFLD.name).upper() not in minF:
-                                    row.setValue("FIELD_NONSDS", "T")
-                                else:
-                                   row.setValue("FIELD_NONSDS", "F") 
                                 instFCFields = [(str(afld.name).upper(), afld) for afld in arcpy.ListFields(os.path.join(installGDB,theFDS,theFC))]
                                 domains = arcpy.da.ListDomains()
                                 idx = map(itemgetter(0), instFCFields).index(theFLD.name.upper())
@@ -896,8 +898,10 @@ def compareGDBs(installGDB,compGDB):
 # compGDB = targetgdbList[0]
 # =============================================================================
 
-for installGDB in installationgdbList:
-    for compGDB in targetgdbList:
+for compGDB in targetgdbList:
+    print ("Getting Feature Datasets, Feature Classes and Fields for " + compGDB)
+    compFeaturesdf = getFeaturesdf(GDB=compGDB)
+    for installGDB in installationgdbList:
         compareGDBs(installGDB,compGDB)
 
 
