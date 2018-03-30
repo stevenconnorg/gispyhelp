@@ -84,7 +84,7 @@ def createNullTable(installGDB,nullTableName="MissingData"):
     # How many OTHER values per field?
     arcpy.AddField_management(errorTable, "OTHER_FC_COUNT", "LONG",field_length =  50)     
     # break out of individual values and counts for Null, None, NA, etc...
-    arcpy.AddField_management(errorTable, "NULL_VALUE_COUNTS", "TEXT", field_length = 32766)   
+    arcpy.AddField_management(errorTable, "NULL_VALUE_COUNTS", "TEXT", field_length = 32766)    # this is limit of characters that a cell can contain in .xlsx - 1
     # break out of individual values and counts for Null, None, NA, etc...
     arcpy.AddField_management(errorTable, "TBD_VALUE_COUNTS", "TEXT", field_length = 32766)     
     # break out of individual values and counts for Null, None, NA, etc...
@@ -224,7 +224,6 @@ def pandas_to_table(pddf,tablename):
     if arcpy.Exists(gdbTbl):
         arcpy.Delete_management(gdbTbl)
     arcpy.da.NumPyArrayToTable(x, gdbTbl)
-    del gdbTbl
 
     
 def compareGDBs(installGDB,compGDB):
@@ -306,12 +305,22 @@ def compareGDBs(installGDB,compGDB):
                         e.g.: "'9999' has 1 feature. '341' has 1 feature. '343' has 1 feature. "
     
     '''
+    # remove any locks that might exist on the installation gdb
+    
     
     start_time = datetime.now()
     installationName = os.path.splitext(os.path.basename(installGDB))[0]
     compName = os.path.splitext(os.path.basename(compGDB))[0]
     arcpy.env.workspace = installGDB
 
+    print("Removing any locks on " + installationName+".gdb")
+    def clearWSLocks(inputWS):
+        '''Attempts to clear locks on a workspace, returns stupid message.'''
+        if all([arcpy.Exists(inputWS), arcpy.Compact_management(inputWS), arcpy.Exists(inputWS)]):
+            return 'Workspace (%s) clear to continue...' % inputWS
+        else:
+            return '!!!!!!!! ERROR WITH WORKSPACE %s !!!!!!!!' % inputWS
+    clearWSLocks(installGDB)
     
     
     missingFDTblName=compName+"_MissingFDS"
@@ -383,46 +392,52 @@ def compareGDBs(installGDB,compGDB):
     fdrows = arcpy.InsertCursor(missFDSTable)
     
     
-    ## FIND FEATURE DATASETS, FEATURE CLASSES AND FIELDS NOT IN TARGET GEODATABASE
-    
-    installFeaturesdf = getFeaturesdf(GDB=installGDB)
-
-    if installFeaturesdf.equals(compFeaturesdf):
-        nonSDSdf = pandas.DataFrame()
-        pandas_to_table(nonSDSdf,tablename="NON_SDS_FC") 
-        print ("No non-SDS feature datasets, classes, or fields")
-    else:
-        print ("Getting Feature Dataset/Feature Class combos in "+installationName + ".gdb that are not in " + compName+".gdb")
-        installFClist = list(installFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
-        compFClist = list(compFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
-             
-        nonSDSFCslist = list(set(installFClist) -set(compFClist))
-
-
-        nonSDSdf = pandas.DataFrame()
-        nonSDSdf["FDS"]=[i.split('/', 1)[0] for i in nonSDSFCslist]
-        nonSDSdf["FC"]=[i.split('/', 1)[1] for i in nonSDSFCslist]
-        print ("Feature Classes in "+installationName+" not included in target geodatabase "+ compName+".")
-        nonSDSdf
-        pandas_to_table(nonSDSdf,tablename="NON_SDS_FC")           
-    
+# =============================================================================
+#     installFeaturesdf = getFeaturesdf(GDB=installGDB)
+#     
+#     if installFeaturesdf.equals(compFeaturesdf):
+#         nonSDSdf = pandas.DataFrame()
+#         pandas_to_table(nonSDSdf,tablename=compName+"_NON_SDS_FC") 
+#         print ("No non-SDS feature datasets or feature classes found")
+#     else:
+#         print ("Getting Feature Dataset/Feature Class combos in "+installationName + ".gdb that are not in " + compName+".gdb")
+#         installFClist = list(installFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+#         compFClist = list(compFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+#              
+#         nonSDSFCslist = list(set(installFClist) -set(compFClist))
+#     
+#     
+#         nonSDSdf = pandas.DataFrame()
+#         nonSDSdf["FDS"]=[i.split('/', 1)[0] for i in nonSDSFCslist]
+#         nonSDSdf["FC"]=[i.split('/', 1)[1] for i in nonSDSFCslist]
+#         print ("Feature Classes in "+installationName+" not included in target geodatabase "+ compName+".")
+#         if arcpy.Exists(os.path.join(installGDB,compName+"_NON_SDS_FC")): 
+#             arcpy.Delete_management(os.path.join(installGDB,compName+"_NON_SDS_FC"))
+#         pandas_to_table(nonSDSdf,tablename=compName+"_NON_SDS_FC")     
+#     
+# =============================================================================
     ## THEN WORK ON MISSING DATA
     arcpy.env.workspace = compGDB
     for theFDS in arcpy.ListDatasets():
         arcpy.env.workspace = compGDB
         for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
-            minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
-            minF = list(minFields)
-            minF = [x.upper() for x in minF]
+            minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if fld.name not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+            
+            minFl = list(minFields)
+            minF = [x.upper() for x in minFl]
             #reqDomains = (fld.domain for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if str(fld.name) not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
             today = date.today()
             timenow = time.strftime('%I:%M:%S-%p')
             printDate = today.strftime('%mm_%dd_%Y')
             print(": Comparing "+installationName + " to " +compName+"      ---  " + printDate + " at " + timenow + " ---  Feature : " + theFDS + "//" + theFC )     
-           # CHECK FOR EXISTANCE OF REQUIRED FEATURE DATASET 
+            # CHECK FOR EXISTANCE OF REQUIRED FEATURE DATASET 
             if arcpy.Exists(os.path.join(installGDB,str(theFDS).upper())):
                # CHECK FOR EXISTANCE OF REQUIRED FEATURE CLASS in FEATURE DATASET
                 if arcpy.Exists(os.path.join(installGDB,str(theFDS).upper(),str(theFC).upper())):
+                    minFieldsInstall = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(installGDB,theFDS,theFC)) if fld.name not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+                    minFlInstall_l = list(minFieldsInstall)
+                    minFlInstall = [x.upper() for x in minFlInstall_l]
+                    
                     # CHECK FOR EXISTANCE OF REQUIRED FIELD in FEATURE CLASS
                     def findField(fc, fi):
                         fieldnames = [field.name.upper() for field in arcpy.ListFields(fc)]
@@ -430,17 +445,19 @@ def compareGDBs(installGDB,compGDB):
                             return True
                         else:
                             return False
-                    
                     # IF required field exists....
                     for theFLD in arcpy.ListFields(os.path.join(installGDB,str(theFDS).upper(),str(theFC).upper())):
                         arcpy.env.workspace = installGDB
                         row = nullrows.newRow()
-                        if theFLD.name.upper() not in minF:
-                            row.setValue("FIELD_NONSDS", "T")
-                        else:
-                           row.setValue("FIELD_NONSDS", "F") 
                         ignoreFLD = ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area']
                         if theFLD.name not in ignoreFLD:           
+                            
+                            if theFLD.name.upper() not in minF:
+                                print(theFLD.name + " *NOT* included in "+compName+"/"+theFC+" fields")
+                                row.setValue("FIELD_NONSDS", "T")
+                            else:
+                                print(theFLD.name + " included in "+compName+"/"+theFC+" fields")
+                                row.setValue("FIELD_NONSDS", "F") 
                             with arcpy.da.SearchCursor(os.path.join(installGDB,theFDS,theFC), str(theFLD.name).upper()) as cur:
                                 row.setValue("FIELD", theFLD.name)
                                 
@@ -583,7 +600,7 @@ def compareGDBs(installGDB,compGDB):
                                 incvalstr = str()
                                 fcCount = arcpy.GetCount_management (theFC)
                                 nrow = int(fcCount.getOutput(0))
-                                if len(vals) > (.95 * nrow):
+                                if len(vals) > (.90 * nrow):
                                         valstr = "95% of correctly populated values are unique -- not counted."
                                         incvalstr = "95% of incorrectly populated values are unique -- not counted."
                                 else:
@@ -655,21 +672,25 @@ def compareGDBs(installGDB,compGDB):
                                             else:
                                                domCount = val+" features are '"+dom+"'. "
                                                incvalstr = incvalstr + domCount 
-                                # remove last comma at end of value string 
-                                row.setValue("POP_VALS",valstr)  
-                                row.setValue("INC_POP_VALS",incvalstr)  
-                                nullrows.insertRow(row)
+                                
+                                if len(valstr) > 32766:
+                                    valstr = "Unique value counts exceed field character limit -- not counted."
+                                elif len(incvalstr) > 32766:
+                                    incvalstr = "Unique value counts exceed field character limit -- not counted."
+                                else:
+                                    # remove last comma at end of value string 
+                                    row.setValue("POP_VALS",valstr)  
+                                    row.setValue("INC_POP_VALS",incvalstr)  
+                                    nullrows.insertRow(row)
                         else:
                             pass
                         del row
-                    for minFLD in minFields:
-                        if findField(os.path.join(installGDB,theFDS,theFC),minFLD):
-                            pass
-                        else:
+                    for mF in minFlInstall:
+                        if mF not in minF:
                             fldrow = fldrows.newRow()
                             fldrow.setValue("FDS", theFDS)
                             fldrow.setValue("FC", theFC)
-                            fldrow.setValue("FIELD_MISSING", minFLD)
+                            fldrow.setValue("FIELD_MISSING", mF)
                             fldrow.setValue("INSTALLATION", installationName)
                             fldrows.insertRow(fldrow)
                             del fldrow   
@@ -709,6 +730,8 @@ def compareGDBs(installGDB,compGDB):
     
     
     time_elapsed = datetime.now() - start_time 
+    print('Comparisons between ' + installationName + " & " + compName + ' Completed!')
+
     print('Time elapsed (hh:mm:ss.ms) {}'.format(time_elapsed))
             
 
@@ -842,7 +865,7 @@ def compareGDBs(installGDB,compGDB):
     indtDetCounts['PERCENT_DETERMINED_VALUES'] = indtDetCounts.TOTAL_DET_COUNT/(indtDetCounts.TOTAL_INDT_COUNT+indtDetCounts.TOTAL_DET_COUNT)
     print ("Getting total count of percent of determined cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
 
-    pandas_to_table(pddf=indtDetCounts,tablename=compName+"Determinant_Values_by_FC")
+    pandas_to_table(pddf=indtDetCounts,tablename=compName+"_Determinant_Values_by_FC")
 
     ### FOR EACH FEATURE CLASS INCLUDED, HOW MANY ARE EMPTY? 
     emptyFCbyFDS=pdNullTbl.query("EMPTY_FC == 'T'").groupby(['FDS','FC','INSTALLATION']).size().reset_index()
@@ -899,12 +922,43 @@ def compareGDBs(installGDB,compGDB):
 # =============================================================================
 
 for compGDB in targetgdbList:
-    print ("Getting Feature Datasets, Feature Classes and Fields for " + compGDB)
-    compFeaturesdf = getFeaturesdf(GDB=compGDB)
+    #print ("Getting Feature Datasets, Feature Classes and Fields for " + compGDB)
+    #compFeaturesdf = getFeaturesdf(GDB=compGDB)
     for installGDB in installationgdbList:
         compareGDBs(installGDB,compGDB)
 
+## FIND FEATURE DATASETS, FEATURE CLASSES AND FIELDS NOT IN TARGET GEODATABASE
 
+# =============================================================================
+# for compGDB in targetgdbList:
+#     compFeaturesdf = getFeaturesdf(GDB=compGDB)
+#     for installGDB in installationgdbList:
+#     installFeaturesdf = getFeaturesdf(GDB=installGDB)
+#     
+#     if installFeaturesdf.equals(compFeaturesdf):
+#         nonSDSdf = pandas.DataFrame()
+#         pandas_to_table(nonSDSdf,tablename="NON_SDS_FC") 
+#         print ("No non-SDS feature datasets, classes, or fields")
+#     else:
+#         
+#         print ("Getting Feature Dataset/Feature Class combos in "+installationName + ".gdb that are not in " + compName+".gdb")
+#         installFClist = list(installFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+#         compFClist = list(compFeaturesdf[['FDS','FC']].apply(lambda x: '/'.join(x), axis=1))
+#              
+#         nonSDSFCslist = list(set(installFClist) -set(compFClist))
+#     
+#     
+#         nonSDSdf = pandas.DataFrame()
+#         nonSDSdf["FDS"]=[i.split('/', 1)[0] for i in nonSDSFCslist]
+#         nonSDSdf["FC"]=[i.split('/', 1)[1] for i in nonSDSFCslist]
+#         print ("Feature Classes in "+installationName+" not included in target geodatabase "+ compName+".")
+#         if arcpy.Exists(os.path.join(installGDB,compName+"_NON_SDS_FC")): 
+#             arcpy.Delete_management(os.path.join(installGDB,compName+"_NON_SDS_FC"))
+#         pandas_to_table(nonSDSdf,tablename=compName+"_NON_SDS_FC")      
+# =============================================================================
+        
 ## create reports for all gdbs
-import subprocess 
-subprocess.call("Rscript Installation_Reports.R", shell=False)
+# =============================================================================
+# import subprocess 
+# subprocess.call("Rscript Installation_Reports.R", shell=False)
+# =============================================================================
