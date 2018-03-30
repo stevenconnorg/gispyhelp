@@ -416,7 +416,7 @@ def compareGDBs(installGDB,compGDB):
             today = date.today()
             timenow = time.strftime('%I:%M:%S-%p')
             printDate = today.strftime('%mm_%dd_%Y')
-            print(": Working on "+installationName + "   ---  " + printDate + " at " + timenow + " ---  Feature : " + theFDS + "//" + theFC )     
+            print(": Comparing "+installationName + " to " +compName+"      ---  " + printDate + " at " + timenow + " ---  Feature : " + theFDS + "//" + theFC )     
            # CHECK FOR EXISTANCE OF REQUIRED FEATURE DATASET 
             if arcpy.Exists(os.path.join(installGDB,str(theFDS).upper())):
                # CHECK FOR EXISTANCE OF REQUIRED FEATURE CLASS in FEATURE DATASET
@@ -787,7 +787,7 @@ def compareGDBs(installGDB,compGDB):
     summary["TBD_PCT"] = j5.TBD_FC_COUNT/(j5.POP_VALS_COUNT)
     summary["NULL_PCT"] = j5.NULL_FC_COUNT/(j5.POP_VALS_COUNT)
     summary["DETERMINED_PCT"] = j5.TOTAL_DET_COUNT/(j5.POP_VALS_COUNT)
-    summary["UNDETERMINED_PCT"] = j5.TOTAL_INTD_COUNT/(j5.POP_VALS_COUNT)
+    summary["UNDETERMINED_PCT"] = j5.TOTAL_INDT_COUNT/(j5.POP_VALS_COUNT)
     summary.sort_values(by=['UNDETERMINED_PCT'])
     pandas_to_table(pddf=j5,tablename=compName+"_Summary_Cell_Count_by_FC")
     
@@ -829,6 +829,7 @@ def compareGDBs(installGDB,compGDB):
     indtCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_INDT_COUNT'].agg('sum').fillna(0).reset_index()
 
     indtCntByFLD=pandas.DataFrame(indtCntByFLD)
+    print ("Getting total count of 'determined' cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
 
     detCntByFLD = pdNullTbl.groupby(['FDS','FC','INSTALLATION'])['TOTAL_DET_COUNT'].agg('sum').fillna(0).reset_index()
     detCntByFLD=pandas.DataFrame(detCntByFLD)
@@ -837,7 +838,8 @@ def compareGDBs(installGDB,compGDB):
                    on=[ 'FDS','FC','INSTALLATION'], how='left' )
 
     indtDetCounts['PERCENT_DETERMINED_VALUES'] = indtDetCounts.TOTAL_DET_COUNT/(indtDetCounts.TOTAL_INDT_COUNT+indtDetCounts.TOTAL_DET_COUNT)
-    
+    print ("Getting total count of percent of determined cells per feature class field for "+installationName + ".gdb compared with " + compName+".gdb")
+
     pandas_to_table(pddf=indtDetCounts,tablename=compName+"Determinant_Values_by_FC")
 
     ### FOR EACH FEATURE CLASS INCLUDED, HOW MANY ARE EMPTY? 
@@ -847,27 +849,33 @@ def compareGDBs(installGDB,compGDB):
 
 
     ### FOR EACH FEATURE CLASS INCLUDED, HOW MANY ARE EMPTY?
+    print ("Getting total count empty feature classes "+installationName + ".gdb compared with " + compName+".gdb")
     emptyFCcnt = len(pdNullTbl.query("EMPTY_FC == 'T'").groupby(['FDS','FC','EMPTY_FC']).size().reset_index() )
+    print ("Getting total count non-empty feature calsses for "+installationName + ".gdb compared with " + compName+".gdb")
     nonemptyFCcnt = len(pdNullTbl.query("EMPTY_FC == 'F'").groupby(['FDS','FC','EMPTY_FC']).size().reset_index() )
     
-    
+    print ("Getting count of empty feature classes by feature dataset for "+installationName + ".gdb compared with " + compName+".gdb")
     if emptyFCbyFDS.empty:
         emptyFLDsumFDS = "NA - no empty FCs"
     else:
         emptyFLDsumFDS = emptyFCbyFDS.groupby(['INSTALLATION']).agg('sum').fillna(0).reset_index()
         emptyFLDsumFDS = emptyFLDsumFDS.iloc[0]['TOTAL_EMPTY_FIELDS']
-    
-    emptyFLDsum = pdNullTbl.query("POP_VALS_COUNT ==0").groupby(['FDS','FC','INSTALLATION']).size().reset_index()
-    
+    print ("Getting count of empty fields from non-empty feature classes for "+installationName + ".gdb compared with " + compName+".gdb")
+    emptyFLDsum = pdNullTbl.query("POP_VALS_COUNT ==0 & EMPTY_FC == 'F'").groupby(['FDS','FC','INSTALLATION']).ngroups
+
     emptyFCbyFDS = emptyFCbyFDS.drop('INSTALLATION', 1) # 1 = by column, 0 by index
     
     pandas_to_table(pddf=emptyFCbyFDS,tablename=compName+"_EmptyFeatureClasses")
 
     ### GET NUMBER OF MISSING FEATURE DATASETS
+    print ("Getting count of missing feature datasets for "+installationName + ".gdb compared with " + compName+".gdb")
+
     missingFDScnt = pdFDSTbl.groupby(['FDS_MISSING','INSTALLATION']).ngroups
     
     ### GET NUMBER OF MISSING FEATURE CLASSES per FEATURE DATASET
+    print ("Getting count of missing feature classes per feature dataset for "+installationName + ".gdb compared with " + compName+".gdb")
     missingFCcnt = pdFCTbl.groupby(['FDS','FC_MISSING','INSTALLATION']).ngroups
+    print ("Binding overview table "+installationName + ".gdb compared with " + compName+".gdb")
 
     # BIND DATA INTO A PANDAS DATAFRAME
     d = {
@@ -883,7 +891,10 @@ def compareGDBs(installGDB,compGDB):
     d= pandas.DataFrame(d)
     pandas_to_table(pddf=d,tablename=compName+"_Overview")
 
-
+# =============================================================================
+# installGDB = installationgdbList[0]
+# compGDB = targetgdbList[0]
+# =============================================================================
 for installGDB in installationgdbList:
     for compGDB in targetgdbList:
         compareGDBs(installGDB,compGDB)
