@@ -438,7 +438,7 @@ def compareGDBs(installGDB,compGDB):
                             with arcpy.da.SearchCursor(os.path.join(installGDB,theFDS,theFC), str(theFLD.name).upper()) as cur:
                                 row.setValue("FIELD", theFLD.name)
                                 
-                                if theFLD.name.upper() not in minF:
+                                if str(theFLD.name).upper() not in minF:
                                     row.setValue("FIELD_NONSDS", "T")
                                 else:
                                    row.setValue("FIELD_NONSDS", "F") 
@@ -450,7 +450,7 @@ def compareGDBs(installGDB,compGDB):
                                 
                                 #CREATE SEARCH CURSOR ON FDS, FC, AND FIELDS TO BUILD LIST OF VALUES AND COUNTS
                                 #with arcpy.da.SearchCursor(os.path.join(installGDB,"Recreation","RecArea_A"), str("recreationAreaType").upper()) as cur:
-                                nullValues = [None, "None", "none", "NONE", "","-99999","77777",77777, " ", "NA", "N/A", "n/a","NULL","Null","<NULL>","<Null>","  ","   ","    ","     "]
+                                nullValues = [None, "None", "none", "NONE", "","-99999","77777",77777, " ", "NA", "na", "N/A", "n/a","NULL","Null","<NULL>","null","<null>""<Null>","  ","   ","    ","     "]
                                 otherValues = [ "Other", "other", "OTHER","88888",88888]
                                 tbdValues = ["tbd","TBD","To be determined","Tbd",99999,"99999"]
                                 #indtList = nullValues + otherValues+ tbdValues
@@ -895,6 +895,7 @@ def compareGDBs(installGDB,compGDB):
 # installGDB = installationgdbList[0]
 # compGDB = targetgdbList[0]
 # =============================================================================
+
 for installGDB in installationgdbList:
     for compGDB in targetgdbList:
         compareGDBs(installGDB,compGDB)
