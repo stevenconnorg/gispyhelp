@@ -1,14 +1,16 @@
 #-------------------------------------------------------------------------------
-# Name:        GIS Viewer Attribution Evaluation
+# Name:        Compare Geodatabase to Target Geodatabase by Field
 # Version:     V_2.0
-# Purpose:     Produce report for installation geodatabase detailing data attribution
+# Purpose:     Produce report for installation geodatabase detailing missing data
 #
 # Author:      Marie Cline Delgado & Steven Connor Gonzalez
 #
 # Created:     2018/01/26
-# Last Update: 2018/03/22
-# Description: Evaluate installation geodatabases for minimum attribution required
-#              by AFCEC GIS viewer for best display of data.
+# Last Update: 2018/04/01
+# Description: Evaluate installation geodatabases for indeterminant data compared
+#              with a target geodatabase by Feature Dataset, Feature Class and Field.
+#              Creates tables in comparison geodatabase  to be used in report created 
+#              in R Markdown called in last call.
 #-------------------------------------------------------------------------------
 
 # Import modules
@@ -421,7 +423,9 @@ def compareGDBs(installGDB,compGDB):
     for theFDS in arcpy.ListDatasets():
         arcpy.env.workspace = compGDB
         for theFC in arcpy.ListFeatureClasses(feature_dataset=theFDS):
-            minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if fld.name not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+            time_elapsed = datetime.now() - start_time  
+            print('Time elapsed (hh:mm:ss.ms) {}'.format(time_elapsed))
+            minFields = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(compGDB,theFDS,theFC)) if fld.name not in ['Shape'.upper(), 'OBJECTID', 'Shape_Length'.upper(), 'Shape_Area'.upper()])
             
             minFl = list(minFields)
             minF = [x.upper() for x in minFl]
@@ -434,7 +438,7 @@ def compareGDBs(installGDB,compGDB):
             if arcpy.Exists(os.path.join(installGDB,str(theFDS).upper())):
                # CHECK FOR EXISTANCE OF REQUIRED FEATURE CLASS in FEATURE DATASET
                 if arcpy.Exists(os.path.join(installGDB,str(theFDS).upper(),str(theFC).upper())):
-                    minFieldsInstall = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(installGDB,theFDS,theFC)) if fld.name not in ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area'])
+                    minFieldsInstall = (fld.name.upper() for fld in arcpy.ListFields(os.path.join(installGDB,theFDS,theFC)) if fld.name not in ['Shape'.upper(), 'OBJECTID', 'Shape_Length'.upper(), 'Shape_Area'.upper()])
                     minFlInstall_l = list(minFieldsInstall)
                     minFlInstall = [x.upper() for x in minFlInstall_l]
                     
@@ -449,7 +453,7 @@ def compareGDBs(installGDB,compGDB):
                     for theFLD in arcpy.ListFields(os.path.join(installGDB,str(theFDS).upper(),str(theFC).upper())):
                         arcpy.env.workspace = installGDB
                         row = nullrows.newRow()
-                        ignoreFLD = ['Shape', 'OBJECTID', 'Shape_Length', 'Shape_Area']
+                        ignoreFLD = ['Shape'.upper(), 'OBJECTID'.upper(), 'Shape_Length'.upper(), 'Shape_Area'.upper()]
                         if theFLD.name not in ignoreFLD:           
                             
                             if theFLD.name.upper() not in minF:
@@ -508,7 +512,7 @@ def compareGDBs(installGDB,compGDB):
                                 for element in countOthers:
                                     if element[0] is None:
                                             value = "NULL"
-                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime:
+                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime or type(element[0]) is tuple:
                                     #elif element[0] is not str:
                                         value =unicode(str(element[0]).encode('utf-8'), errors="ignore")
                                     else:
@@ -526,7 +530,7 @@ def compareGDBs(installGDB,compGDB):
                                 for element in countTBD:
                                     if element[0] is None:
                                             value = "NULL"
-                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime:
+                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime  or type(element[0]) is tuple:
                                     #elif element[0] is not str:
                                         value =unicode(str(element[0]).encode('utf-8'), errors="ignore")
                                     else:
@@ -544,7 +548,7 @@ def compareGDBs(installGDB,compGDB):
                                 for element in countNulls:
                                     if element[0] is None:
                                             value = "NULL"
-                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime:
+                                    elif element[0] is int or type(element[0]) is float or type(element[0]) is int or type(element[0]) is datetime or type(element[0]) is tuple:
                                     #elif element[0] is not str:
                                         value =unicode(str(element[0]).encode('utf-8'), errors="ignore")
                                     else:
@@ -601,8 +605,8 @@ def compareGDBs(installGDB,compGDB):
                                 fcCount = arcpy.GetCount_management (theFC)
                                 nrow = int(fcCount.getOutput(0))
                                 if len(vals) > (.90 * nrow):
-                                        valstr = "95% of correctly populated values are unique -- not counted."
-                                        incvalstr = "95% of incorrectly populated values are unique -- not counted."
+                                        valstr = ">90% of determinant values are unique -- not listed here."
+                                        #incvalstr = ">90% of incorrectly populated values are unique -- not counted."
                                 else:
                                     for v in vals:
                                         
@@ -611,7 +615,7 @@ def compareGDBs(installGDB,compGDB):
                                         if domainVals == [] and domainRng == []: 
                                             if v[0] is None:
                                                 dom = "NULL"
-                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime:
+                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime or type(v[0]) is tuple:
                                             #elif v[0] is not str:
                                                 dom =unicode(str(v[0]).encode('utf-8'), errors="ignore")
                                             else:
@@ -627,7 +631,7 @@ def compareGDBs(installGDB,compGDB):
                                         elif domainVals != [] and v[0] in domainVals: 
                                             if v[0] is None:
                                                 dom = "NULL"
-                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime:
+                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime or type(v[0]) is tuple:
                                             #elif v[0] is not str:
                                                 dom =unicode(str(v[0]).encode('utf-8'), errors="ignore")
                                             else:
@@ -644,7 +648,7 @@ def compareGDBs(installGDB,compGDB):
                                         #elif domainRng != [] and [i for i in v if i in domainRng]:
                                             if v[0] is None:
                                                 dom = "NULL"
-                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime:
+                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime or type(v[0]) is tuple:
                                             #elif v[0] is not str:
                                                 dom =unicode(str(v[0]).encode('utf-8'), errors="ignore")
                                             else:
@@ -660,7 +664,7 @@ def compareGDBs(installGDB,compGDB):
                                         else:    
                                             if v[0] is None:
                                                 dom = "NULL"
-                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime:
+                                            elif v[0] is int or type(v[0]) is float or type(v[0]) is int or type(v[0]) is datetime or type(v[0]) is tuple:
                                             # elif v[0] is not str:
                                                 dom =unicode(str(v[0]).encode('utf-8'), errors="ignore")
                                             else:
@@ -674,9 +678,9 @@ def compareGDBs(installGDB,compGDB):
                                                incvalstr = incvalstr + domCount 
                                 
                                 if len(valstr) > 32766:
-                                    valstr = "Unique value counts exceed field character limit -- not counted."
+                                    valstr = "Unique value counts exceed field character limit -- not listed here."
                                 elif len(incvalstr) > 32766:
-                                    incvalstr = "Unique value counts exceed field character limit -- not counted."
+                                    incvalstr = "Unique value counts exceed field character limit -- not listed here."
                                 else:
                                     # remove last comma at end of value string 
                                     row.setValue("POP_VALS",valstr)  
@@ -729,9 +733,8 @@ def compareGDBs(installGDB,compGDB):
     del fcrows
     
     
-    time_elapsed = datetime.now() - start_time 
     print('Comparisons between ' + installationName + " & " + compName + ' Completed!')
-
+    time_elapsed = datetime.now() - start_time  
     print('Time elapsed (hh:mm:ss.ms) {}'.format(time_elapsed))
             
 
@@ -916,11 +919,6 @@ def compareGDBs(installGDB,compGDB):
     d= pandas.DataFrame(d)
     pandas_to_table(pddf=d,tablename=compName+"_Overview")
 
-# =============================================================================
-# installGDB = installationgdbList[0]
-# compGDB = targetgdbList[0]
-# =============================================================================
-
 for compGDB in targetgdbList:
     #print ("Getting Feature Datasets, Feature Classes and Fields for " + compGDB)
     #compFeaturesdf = getFeaturesdf(GDB=compGDB)
@@ -959,6 +957,6 @@ for compGDB in targetgdbList:
         
 ## create reports for all gdbs
 # =============================================================================
-# import subprocess 
-# subprocess.call("Rscript Installation_Reports.R", shell=False)
+import subprocess 
+subprocess.call("Rscript Installation_Reports.R", shell=False)
 # =============================================================================
