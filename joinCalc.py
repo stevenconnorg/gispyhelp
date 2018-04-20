@@ -1,4 +1,4 @@
-import arcpy, traceback, os, sys
+import arcpy, os
 from arcpy import env
 env.overwriteOutput = True
 
@@ -27,46 +27,53 @@ sourceRPSUID =arcpy.GetParameterAsText(8)
 #join key field
 updateRPSUID =arcpy.GetParameterAsText(9)
 
-
-RPSUID =arcpy.GetParameterAsText(10)
-
-tbl = "in_memory\\tbl"
-if arcpy.Exists(tbl):
-	arcpy.Delete_management(tbl)
-arcpy.TableSelect_analysis(joinFc,tbl,where_clause='"'+joinValFld+'"'+whereClause + " and '"+ sourceRPSUID+"' = '"+RPSUID+"'")
-
-if arcpy.Exists(tbl):
-	arcpy.AddMessage( "table exists")
-else:
-	arcpy.AddMessage( "table doesn't exist")
-
-for fld in arcpy.ListFields(tbl):
-	arcpy.AddMessage(fld.name)
-arcpy.AddMessage( len(arcpy.ListFields(tbl)))
-
+# remove leading zeros from destination join id field?
 if checkedLeftstrip:
-	with arcpy.da.UpdateCursor(pointFc,[IdFld]) as cursor:
-		for row in cursor:
-			row=[i.lstrip('0') for i in row]
-			cursor.updateRow(row)
-			
-#create dictionary
-#Key: join field
-#Value: field with value to be transferred
-valueDi = dict ([(key, val) for key, val in
-                 arcpy.da.SearchCursor
-                 (joinFc, [joinIdFld, joinValFld])])
+    with arcpy.da.UpdateCursor(pointFc,[IdFld]) as cursor:
+            for row in cursor:
+                row=[i.lstrip('0') for i in row]
+                cursor.updateRow(row)
+                
+                
+def unique_values(table , field):
+    with arcpy.da.SearchCursor(table, [field]) as cursor:
+        return sorted({str(row[0]) for row in cursor})
 
-#update feature class
-with arcpy.da.UpdateCursor (pointFc, [updateFld, IdFld]) as cursor:
-    for update, key in cursor:
-        #skip if key value is not in dictionary
-        if not key in valueDi:
-            continue
-        #create row tuple
-        row = (valueDi [key], key)
+myRPSUIDs = unique_values(pointFc, updateRPSUID)
 
-        #update row
-        cursor.updateRow (row)
+for RPSUID in myRPSUIDs:
+    # for RPSUID in myRPSUIDs:
+    arcpy.AddMessage(RPSUID)
+    tbl = os.path.join("in_memory","tbl")
+    
+    if arcpy.Exists(tbl):
+        arcpy.Delete_management(tbl)
+    arcpy.TableSelect_analysis(joinFc,tbl, where_clause=sourceRPSUID+' =' +RPSUID+" and "+joinValFld+ " "+whereClause)
+    
+    
+    	#create dictionary
+    	#Key: join field
+    	#Value: field with value to be transferred
+    valueDi = dict ([(key, val) for key, val in
+    					 arcpy.da.SearchCursor
+    					 (tbl, [joinIdFld, joinValFld])])
+    
+    
+    	#update feature class
+    
+    with arcpy.da.UpdateCursor (pointFc, [updateFld, IdFld],where_clause=updateRPSUID+" = '"+RPSUID+"'") as cursor:
+        for update, key in cursor:
+    			#skip if key value is not in dictionary
+            if not key in valueDi:
+                continue
+    			#create row tuple
+            row = (valueDi [key], key)
+            arcpy.AddMessage(row)
+    			#update row
+            cursor.updateRow (row)
+            del row
+        
+    del cursor
+    arcpy.Delete_management(tbl)
 
-del cursor
+
