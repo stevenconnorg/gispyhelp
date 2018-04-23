@@ -93,7 +93,9 @@ for RPSUID in myRPSUIDs:
     if f1.type == "Short":
          valueDi =  {k:int(v) for k, v in valueDi.iteritems()}         
     elif f1.type == "Long":
-         valueDi =  {k:float(v) for k, v in valueDi.iteritems()}  
+         valueDi =  {k:int(v) for k, v in valueDi.iteritems()}       
+    elif f1.type == "Double":
+         valueDi =  {k:float(v) for k, v in valueDi.iteritems()} 
     else:
         pass
     # convert dictionary keys 
@@ -103,6 +105,8 @@ for RPSUID in myRPSUIDs:
     if f2.type == "Short":
          valueDi =  {int(k):v for k, v in valueDi.iteritems()}         
     elif f2.type == "Long":
+         valueDi =  {int(k):v for k, v in valueDi.iteritems()}          
+    elif f2.type == "Double":
          valueDi =  {float(k):v for k, v in valueDi.iteritems()}  
     else:
         pass
