@@ -1,3 +1,6 @@
+# for use in ArcMap custom toolbox
+
+
 import arcpy, os
 from arcpy import env
 env.overwriteOutput = True
