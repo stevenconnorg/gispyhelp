@@ -63,12 +63,37 @@ for RPSUID in myRPSUIDs:
     					 arcpy.da.SearchCursor
     					 (tbl, [joinIdFld, joinValFld])])
     
-    valueDi =  {k:int(v) for k, v in valueDi.iteritems()}
+    
+    # convert dictionary keys and values to update fc field types
+    f1=arcpy.ListFields(pointFc, wild_card=updateFld)[0]
+    f2=arcpy.ListFields(pointFc, wild_card=IdFld)[0]
+    
+    # convert dictionary values 
+    if f1.type == "String":
+         valueDi =  {k:str(v) for k, v in valueDi.iteritems()}
+    if f1.type == "Short":
+         valueDi =  {k:int(v) for k, v in valueDi.iteritems()}         
+    elif f1.type == "Long":
+         valueDi =  {k:float(v) for k, v in valueDi.iteritems()}  
+    else:
+        pass
+    # convert dictionary keys 
+    if f2.type == "String":
+     valueDi =  {str(k):v for k, v in valueDi.iteritems()}
+     
+    if f2.type == "Short":
+         valueDi =  {int(k):v for k, v in valueDi.iteritems()}         
+    elif f2.type == "Long":
+         valueDi =  {float(k):v for k, v in valueDi.iteritems()}  
+    else:
+        pass
+    
+    
     #update feature class
     with arcpy.da.UpdateCursor (pointFc, [updateFld, IdFld],where_clause=updateRPSUID+" = '"+RPSUID+"'") as cursor:
         for update, key in cursor:
     			#skip if key value is not in dictionary
-            if not str(key) in valueDi:
+            if not key in valueDi:
                 continue
     			#create row tuple
             row = (valueDi [key], key)
@@ -76,7 +101,12 @@ for RPSUID in myRPSUIDs:
     			#update row
             cursor.updateRow (row)
             del row
-        
+    
+    #arcpy.MakeLayer_management(pointFc,str(pointFc))
+    #arcpy.JoinField_management (str(pointFc), updateFld, joinFc, joinValFld)
+    
+    
     del cursor
     arcpy.Delete_management(tbl)
+
 
